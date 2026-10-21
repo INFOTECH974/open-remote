@@ -1,0 +1,149 @@
+# Distant
+
+Prise en main à distance minimaliste, façon TeamViewer ou Supremo, écrite en Rust avec [Tauri 2](https://tauri.app).
+Windows, macOS et Linux (X11).
+
+- **ID à 9 chiffres + mot de passe**, comme les outils du marché.
+- **Relais auto-hébergé** : un petit serveur Rust met les postes en relation, sans compte ni service tiers.
+- **Chiffrement de bout en bout** : le relais ne voit ni l'écran, ni les frappes, ni le mot de passe.
+- **Accès sans surveillance** : mot de passe permanent, lancement au démarrage, icône dans la zone de notification.
+- Plusieurs écrans, trois niveaux de qualité d'image, clavier en touches physiques (AZERTY ↔ AZERTY sans surprise).
+
+## Architecture
+
+```
+ ┌──────────────┐        TCP         ┌──────────────┐        TCP         ┌──────────────┐
+ │ Visualiseur  │ ─────────────────▶ │    Relais    │ ◀───────────────── │    Hôte      │
+ │ (app Tauri)  │  flux chiffré E2E  │ distant-relay│  flux chiffré E2E  │ (app Tauri)  │
+ └──────────────┘                    └──────────────┘                    └──────────────┘
+```
+
+| Dossier | Rôle |
+|---|---|
+| `crates/proto` | Protocole partagé : trames, messages du relais, messages de session, canal chiffré |
+| `crates/relay` | Serveur relais (binaire `distant-relay`) |
+| `src-tauri` | Application : côté hôte (capture, injection clavier/souris) et côté visualiseur |
+| `ui` | Interface (HTML/CSS/JS sans dépendance) |
+
+### Déroulé d'une session
+
+1. L'hôte garde une connexion « contrôle » ouverte vers le relais avec son ID.
+2. Le visualiseur demande cet ID ; le relais prévient l'hôte, qui ouvre une connexion dédiée.
+3. Le relais relie les deux connexions et recopie les octets, sans les comprendre.
+4. Échange **SPAKE2** à partir du mot de passe (dérivé par **PBKDF2**, salé par l'ID) → clés **ChaCha20-Poly1305**, une par sens.
+5. L'hôte envoie l'écran en **tuiles JPEG** de 128 px : seules les zones modifiées partent. Le visualiseur accuse réception de chaque image, l'hôte n'en a jamais plus de deux d'avance : la cadence s'adapte au débit et la latence ne s'accumule pas.
+
+## Prérequis
+
+- [Rust](https://rustup.rs) 1.85 ou plus récent
+- [Node.js](https://nodejs.org) 18+ (uniquement pour la CLI Tauri)
+- Les [prérequis système de Tauri](https://tauri.app/start/prerequisites/) :
+  - **Windows** : WebView2 (déjà présent sur Windows 10/11) et les outils de build MSVC
+  - **macOS** : Xcode Command Line Tools
+  - **Linux** : `libwebkit2gtk-4.1-dev`, `libxdo-dev`, `libayatana-appindicator3-dev`, `libxcb1-dev`, etc.
+
+```bash
+npm install
+```
+
+## Lancer en local
+
+Dans un premier terminal, le relais :
+
+```bash
+npm run relay
+```
+
+Dans un second, l'application :
+
+```bash
+npm run dev
+```
+
+Par défaut l'application utilise le relais `127.0.0.1:21116`. Vous pouvez vous connecter à votre propre ID pour essayer (l'image se répète à l'infini, c'est normal).
+
+Pour simuler deux postes sur la même machine, lancez une seconde instance avec un autre profil (autre ID, autres réglages) une fois l'application compilée :
+
+```bash
+DISTANT_PROFILE=b ./target/debug/distant
+```
+
+## Héberger le relais
+
+Le relais est un simple binaire sans dépendance :
+
+```bash
+cargo build -p distant-relay --release
+./target/release/distant-relay --listen 0.0.0.0:21116 --key un-secret-partage
+```
+
+- Ouvrez le port TCP **21116** sur le serveur.
+- `--key` (ou `DISTANT_RELAY_KEY`) est optionnel : sans clé, n'importe qui connaissant l'adresse peut utiliser votre relais (sans pouvoir lire les sessions des autres). Avec une clé, seules les applications configurées avec cette clé sont acceptées.
+- Les journaux se règlent avec `RUST_LOG` (par exemple `RUST_LOG=distant_relay=debug`).
+
+Exemple de service systemd :
+
+```ini
+[Unit]
+Description=Relais Distant
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/distant-relay --listen 0.0.0.0:21116
+Environment=DISTANT_RELAY_KEY=un-secret-partage
+Restart=always
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Dans l'application, renseignez ensuite l'adresse (`relais.exemple.fr` ou `relais.exemple.fr:21116`) et la clé dans les **réglages**.
+
+## Accès sans surveillance
+
+Pour joindre vos propres machines sans personne devant :
+
+1. Sur chaque machine, définissez un **mot de passe permanent** (8 caractères minimum) et activez **Lancer au démarrage**.
+2. Fermer la fenêtre ne quitte pas Distant : il reste dans la zone de notification. Pour l'arrêter, utilisez **Quitter Distant** dans le menu de l'icône.
+3. Depuis votre poste, cochez **Mémoriser** à la première connexion : la machine apparaît dans **Mes machines** et se rejoint ensuite en un clic.
+
+Le mot de passe temporaire (affiché dans la fenêtre, renouvelé à chaque lancement) reste valable en parallèle.
+
+## Construire les installateurs
+
+```bash
+npm run build
+```
+
+Les installateurs sont dans `target/release/bundle/` (`.msi`/`.exe` sous Windows, `.dmg`/`.app` sous macOS, `.deb`/`.AppImage` sous Linux). Tauri ne compile pas d'un système à l'autre : construisez chaque version sur son système, ou via une CI (GitHub Actions avec `tauri-apps/tauri-action`).
+
+## Sécurité
+
+- Le mot de passe ne circule jamais, même chiffré. SPAKE2 empêche un relais malveillant de le deviner hors ligne : chaque essai demande une vraie tentative de connexion.
+- Après trois mots de passe erronés, l'hôte refuse les connexions 30 s, puis le double à chaque nouvel échec (jusqu'à 10 min). Une seule connexion entrante est traitée à la fois.
+- Le mot de passe permanent et les mots de passe mémorisés ne sont stockés que sous forme dérivée (PBKDF2, 100 000 itérations) dans le fichier de réglages de l'utilisateur. Ce secret dérivé suffit pour se connecter avec Distant : protégez ce fichier comme un mot de passe.
+- Quand quelqu'un contrôle le poste, un bandeau l'indique dans la fenêtre principale, avec un bouton pour couper la session.
+- Le relais limite les tentatives de connexion à 20 par minute et par adresse IP.
+
+Fichier de réglages : `%APPDATA%\app.distant.desktop\config.json` (Windows), `~/Library/Application Support/app.distant.desktop/config.json` (macOS), `~/.config/app.distant.desktop/config.json` (Linux).
+
+## Autorisations et limites connues
+
+- **macOS** : autorisez Distant dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). L'invite apparaît au premier contrôle.
+- **Windows** : l'écran de verrouillage, l'invite UAC et `Ctrl+Alt+Suppr` ne sont pas accessibles (il faudrait un service Windows). Une fenêtre lancée en administrateur ne peut pas être contrôlée si Distant ne l'est pas lui-même.
+- **Linux** : X11 uniquement pour l'injection clavier/souris. Sous Wayland, la capture passe par le portail du bureau quand il est disponible.
+- Pas encore de presse-papiers partagé, de transfert de fichiers ni de son.
+- Le clavier est transmis en touches physiques : si les deux postes n'ont pas la même disposition (AZERTY/QWERTY), les caractères suivent la disposition du poste contrôlé. `Cmd` et `Ctrl` sont échangés automatiquement entre un Mac et un PC.
+
+## Développement
+
+```bash
+cargo test --workspace     # tests unitaires (protocole, chiffrement, tuiles, réglages)
+cargo clippy --workspace   # lint
+RUST_LOG=distant=debug npm run dev
+```
+
+## Licence
+
+MIT

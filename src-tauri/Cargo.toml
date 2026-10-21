@@ -1,0 +1,38 @@
+[package]
+name = "distant"
+description = "Prise en main à distance minimaliste"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+distant-proto.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+rand.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tauri = { version = "2.12", features = ["tray-icon"] }
+tauri-plugin-autostart = "2.7"
+tauri-plugin-single-instance = "2"
+xcap = "0.9"
+jpeg-encoder = { version = "0.7", features = ["simd"] }
+rayon = "1"
+hostname = "0.4"
+
+# Windows : injection clavier/souris directe via SendInput (multi-écrans, scancodes).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# macOS et Linux : injection via enigo.
+[target.'cfg(not(windows))'.dependencies]
+enigo = "0.6"

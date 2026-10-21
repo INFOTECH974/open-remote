@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distant</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="main.css">
+</head>
+<body class="home">
+  <header class="topbar">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="1" y="1" width="22" height="22" rx="6" class="logo-bg"/>
+      <rect x="5.5" y="6.5" width="13" height="8.5" rx="1.5" class="logo-line"/>
+      <path d="M10 18.5h4M12 15v3.5" class="logo-line"/>
+    </svg>
+    <span class="product">Distant</span>
+    <span class="divider" aria-hidden="true"></span>
+    <span id="hostname" class="hostname"></span>
+    <span class="spacer"></span>
+    <button id="open-settings" class="icon-btn" type="button" title="Réglages du relais">
+      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/></svg>
+      <span class="sr-only">Réglages du relais</span>
+    </button>
+  </header>
+
+  <div id="incoming" class="incoming" role="alert" hidden>
+    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5.5 14h5M8 11.5V14"/></svg>
+    <span id="incoming-text" class="incoming-text"></span>
+    <button id="end-incoming" class="btn danger small" type="button">Couper la session</button>
+  </div>
+
+  <main class="panes">
+    <section class="pane" aria-labelledby="host-title">
+      <header class="pane-head">
+        <h2 id="host-title">Autoriser le contrôle à distance</h2>
+        <p>Ce poste est joignable avec cet ID et ce mot de passe.</p>
+      </header>
+
+      <dl class="credentials">
+        <div class="credential">
+          <dt class="label">Votre ID</dt>
+          <dd>
+            <output id="my-id" class="big num">— — —</output>
+            <button id="copy-id" class="icon-btn" type="button" title="Copier l'ID">
+              <svg class="icon i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>
+              <svg class="icon i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+              <span class="sr-only">Copier l'ID</span>
+            </button>
+          </dd>
+        </div>
+        <div class="credential">
+          <dt class="label">Mot de passe</dt>
+          <dd>
+            <output id="my-password" class="big num">— — —</output>
+            <button id="copy-password" class="icon-btn" type="button" title="Copier le mot de passe">
+              <svg class="icon i-copy" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>
+              <svg class="icon i-done" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+              <span class="sr-only">Copier le mot de passe</span>
+            </button>
+            <button id="new-password" class="icon-btn" type="button" title="Générer un nouveau mot de passe">
+              <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+              <span class="sr-only">Nouveau mot de passe</span>
+            </button>
+          </dd>
+        </div>
+      </dl>
+
+      <div class="options">
+        <label class="switch">
+          <input id="accept" type="checkbox" role="switch">
+          <span class="track" aria-hidden="true"></span>
+          <span>Accepter les connexions entrantes</span>
+        </label>
+        <div class="option-row">
+          <label class="switch">
+            <input id="unattended" type="checkbox" role="switch">
+            <span class="track" aria-hidden="true"></span>
+            <span>Accès sans surveillance</span>
+          </label>
+          <button id="unattended-edit" class="link" type="button" hidden>Modifier</button>
+        </div>
+        <label class="switch">
+          <input id="autostart" type="checkbox" role="switch">
+          <span class="track" aria-hidden="true"></span>
+          <span>Lancer au démarrage de la session</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="pane" aria-labelledby="peer-title">
+      <header class="pane-head">
+        <h2 id="peer-title">Contrôler un ordinateur distant</h2>
+        <p>Saisissez l'ID et le mot de passe du poste.</p>
+      </header>
+
+      <form id="connect-form" class="connect" autocomplete="off">
+        <div class="fields">
+          <label class="field">
+            <span class="label">ID du poste</span>
+            <input id="peer-id" class="num" inputmode="numeric" placeholder="123 456 789" required spellcheck="false">
+          </label>
+          <label class="field">
+            <span class="label">Mot de passe</span>
+            <input id="peer-password" type="password" required spellcheck="false">
+          </label>
+        </div>
+        <div class="connect-row">
+          <label class="check">
+            <input id="remember" type="checkbox">
+            <span>Mémoriser le mot de passe</span>
+          </label>
+          <button id="connect" class="btn primary" type="submit">
+            <span id="connect-label">Se connecter</span>
+            <span class="progress" aria-hidden="true"></span>
+          </button>
+        </div>
+        <p id="form-message" class="form-message" role="alert" hidden></p>
+      </form>
+
+      <div class="machines">
+        <h3>Mes machines</h3>
+        <ul id="machines" class="machine-list"></ul>
+        <p id="machines-empty" class="machines-empty">Les postes auxquels vous vous connectez apparaîtront ici.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="notice" class="notice" role="alert" hidden>
+    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3M8 11.4v.1"/></svg>
+    <span id="notice-text"></span>
+    <button id="notice-dismiss" class="link" type="button">OK</button>
+  </div>
+
+  <footer class="statusbar">
+    <span id="relay-lamp" class="lamp" data-state="connecting" aria-hidden="true"></span>
+    <span id="relay-state" class="sr-only">Connexion</span>
+    <span id="status-text" class="status-text">Démarrage…</span>
+    <span id="relay-addr" class="relay-addr num"></span>
+    <span class="spacer"></span>
+    <span id="version" class="version num"></span>
+  </footer>
+
+  <template id="machine-row">
+    <li class="machine">
+      <svg class="icon m-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5.5 14h5M8 11.5V14"/></svg>
+      <span class="m-main">
+        <span class="m-name"></span>
+        <span class="m-sub"><span class="m-id num"></span><span class="m-os"></span></span>
+      </span>
+      <span class="m-last"></span>
+      <span class="m-saved" title="Mot de passe mémorisé">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="5.5" cy="10.5" r="2.5"/><path d="M7.3 8.7l6.2-6.2M11.5 4.5l1.5 1.5M10 6l1 1"/></svg>
+        <span class="sr-only">Mot de passe mémorisé</span>
+      </span>
+      <button class="m-open btn small" type="button"></button>
+      <button class="m-forget icon-btn" type="button">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+        <span class="sr-only">Oublier</span>
+      </button>
+    </li>
+  </template>
+
+  <dialog id="unattended-dialog" class="dialog">
+    <form id="unattended-form" method="dialog">
+      <h2>Mot de passe permanent</h2>
+      <p class="hint">Il permet de joindre ce poste sans personne devant. Seule une empreinte est enregistrée, jamais le mot de passe.</p>
+      <label class="field">
+        <span class="label">Mot de passe (8 caractères minimum)</span>
+        <input id="perm-password" type="password" minlength="8" required>
+      </label>
+      <label class="field">
+        <span class="label">Confirmation</span>
+        <input id="perm-confirm" type="password" minlength="8" required>
+      </label>
+      <p id="unattended-error" class="form-message" role="alert"></p>
+      <div class="dialog-actions">
+        <button id="unattended-cancel" class="btn" type="button">Annuler</button>
+        <button id="unattended-save" class="btn primary" type="submit">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="dialog">
+    <form id="settings-form" method="dialog">
+      <h2>Serveur relais</h2>
+      <p class="hint">Il met les postes en relation et ne voit que des données chiffrées.</p>
+      <label class="field">
+        <span class="label">Adresse (hôte ou hôte:port)</span>
+        <input id="relay" required spellcheck="false" placeholder="relais.exemple.fr:21116">
+      </label>
+      <label class="field">
+        <span class="label">Clé du relais (facultatif)</span>
+        <input id="relay-key" type="password" spellcheck="false">
+      </label>
+      <p id="settings-error" class="form-message" role="alert"></p>
+      <div class="dialog-actions">
+        <button id="settings-cancel" class="btn" type="button">Annuler</button>
+        <button class="btn primary" type="submit">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="main.js"></script>
+</body>
+</html>

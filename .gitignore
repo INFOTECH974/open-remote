@@ -1,0 +1,10 @@
+/target
+/node_modules
+/src-tauri/gen
+*.json.tmp
+.DS_Store
+
+# Artefacts de travail du skill de design (captures, maquettes, page de décision)
+/.impeccable/questions
+/.impeccable/review
+/.impeccable/mocks

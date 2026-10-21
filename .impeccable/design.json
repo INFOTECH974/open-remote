@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T09:10:00+04:00",
+  "title": "Design System: Distant",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Bleu Distant", "canonical": "#1b5fe0", "dark": "#2a64d8", "tonalRamp": ["#0b2557", "#0f337a", "#13419c", "#1b5fe0", "#4a80ea", "#7ea4f1", "#b5cbf7", "#e9f0fd"] },
+      "primary-deep": { "role": "primary", "displayName": "Bleu profond", "canonical": "#164fbd", "dark": "#2459c4" },
+      "primary-soft": { "role": "primary", "displayName": "Voile bleu", "canonical": "#e9f0fd", "dark": "#1b2944" },
+      "neutral-bg": { "role": "neutral", "displayName": "Gris de fond", "canonical": "#f3f4f6", "dark": "#131519" },
+      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#ffffff", "dark": "#1c1f25" },
+      "surface-hover": { "role": "neutral", "displayName": "Surface survolée", "canonical": "#f5f7fa", "dark": "#242830" },
+      "border": { "role": "neutral", "displayName": "Trait", "canonical": "#e2e5e9", "dark": "#2c3139" },
+      "border-strong": { "role": "neutral", "displayName": "Trait marqué", "canonical": "#c3c9d2", "dark": "#414854" },
+      "ink": { "role": "neutral", "displayName": "Encre", "canonical": "#14171c", "dark": "#e7e9ec", "tonalRamp": ["#14171c", "#2a2f37", "#414854", "#59626e", "#687180", "#939ca8", "#c3c9d2", "#f3f4f6"] },
+      "ink-muted": { "role": "neutral", "displayName": "Encre atténuée", "canonical": "#59626e", "dark": "#a3abb6" },
+      "ink-subtle": { "role": "neutral", "displayName": "Encre discrète", "canonical": "#687180", "dark": "#939ca8" },
+      "success": { "role": "status", "displayName": "Vert en ligne", "canonical": "#12a150", "dark": "#3fbf75" },
+      "warning": { "role": "status", "displayName": "Ambre", "canonical": "#d08a0e", "dark": "#e3a530" },
+      "danger": { "role": "status", "displayName": "Rouge alerte", "canonical": "#d42f2f", "dark": "#c93434" },
+      "danger-deep": { "role": "status", "displayName": "Rouge profond", "canonical": "#b72424", "dark": "#ad2b2b" },
+      "danger-ink": { "role": "status", "displayName": "Encre rouge", "canonical": "#b42323", "dark": "#ff8c8c" },
+      "danger-soft": { "role": "status", "displayName": "Voile rouge", "canonical": "#fdeeee", "dark": "#3a1f22" },
+      "stage": { "role": "neutral", "displayName": "Scène", "canonical": "#0f1114" }
+    },
+    "typographyMeta": {
+      "credential": { "displayName": "Credential", "purpose": "ID et mot de passe de ce poste, seuls éléments à cette taille." },
+      "title": { "displayName": "Title", "purpose": "Titres de panneaux (17px pour dialogues et superpositions)." },
+      "body": { "displayName": "Body", "purpose": "Texte courant, champs (15px), boutons (600)." },
+      "label": { "displayName": "Label", "purpose": "Libellés, descriptions, interrupteurs, barre d'outils." },
+      "meta": { "displayName": "Meta", "purpose": "ID des machines, dates, statistiques, barre d'état." }
+    },
+    "shadows": [
+      { "name": "floating", "value": "0 18px 48px rgb(15 20 30 / 0.18), 0 2px 8px rgb(15 20 30 / 0.08)", "purpose": "Dialogues et superposition de session (sombre : opacités 0.5 / 0.3 sur noir)." },
+      { "name": "fullscreen-toolbar", "value": "0 6px 24px rgb(0 0 0 / 0.35)", "purpose": "Barre d'outils dévoilée en plein écran." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Entrées (dialogue, bandeau), interrupteurs, progression de connexion." },
+      { "name": "state", "value": "120ms ease", "purpose": "Survols et changements de couleur." },
+      { "name": "connect-progress", "value": "12s cubic-bezier(0.16, 1, 0.3, 1) forwards", "purpose": "Barre du bouton « Se connecter », de 0 à 90 %, une seule fois." }
+    ],
+    "breakpoints": [
+      { "name": "machines-compact", "value": "840px" },
+      { "name": "toolbar-labels", "value": "1100px" },
+      { "name": "toolbar-icons", "value": "960px" },
+      { "name": "toolbar-minimal", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Bouton principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Action principale d'une zone : Se connecter, Connexion à une machine mémorisée, Enregistrer.",
+      "html": "<button class=\"ds-btn-primary\">Se connecter</button>",
+      "css": ".ds-btn-primary { height: 36px; padding: 0 16px; border: 0; border-radius: 8px; background: #1b5fe0; color: #fff; font: 600 14px/1 'Segoe UI', system-ui, sans-serif; cursor: pointer; transition: background-color 120ms ease; } .ds-btn-primary:hover { background: #164fbd; } .ds-btn-primary:focus-visible { outline: 2px solid #1b5fe0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Bouton secondaire",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Actions secondaires : Annuler, Choisir.",
+      "html": "<button class=\"ds-btn-secondary\">Annuler</button>",
+      "css": ".ds-btn-secondary { height: 36px; padding: 0 16px; border: 1px solid #c3c9d2; border-radius: 8px; background: #fff; color: #14171c; font: 600 14px/1 'Segoe UI', system-ui, sans-serif; cursor: pointer; transition: background-color 120ms ease; } .ds-btn-secondary:hover { background: #f5f7fa; } .ds-btn-secondary:focus-visible { outline: 2px solid #1b5fe0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Bouton danger",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Couper une session (bandeau de session entrante, Terminer dans la fenêtre de contrôle).",
+      "html": "<button class=\"ds-btn-danger\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"><path d=\"M4.5 4.5l7 7M11.5 4.5l-7 7\"/></svg>Terminer</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 8px; background: #d42f2f; color: #fff; font: 600 13px/1 'Segoe UI', system-ui, sans-serif; cursor: pointer; } .ds-btn-danger:hover { background: #b72424; } .ds-btn-danger:focus-visible { outline: 2px solid #1b5fe0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Champ de saisie",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "ID du poste, mots de passe, adresse du relais.",
+      "html": "<label class=\"ds-field\"><span>ID du poste</span><input class=\"ds-input\" placeholder=\"123 456 789\"></label>",
+      "css": ".ds-field { display: grid; gap: 6px; font: 500 13px 'Segoe UI', system-ui, sans-serif; color: #59626e; } .ds-input { height: 36px; padding: 0 12px; border: 1px solid #c3c9d2; border-radius: 8px; background: #fff; color: #14171c; font: 15px/1 'Segoe UI', system-ui, sans-serif; font-variant-numeric: tabular-nums; } .ds-input:hover { border-color: #687180; } .ds-input:focus { outline: none; border-color: #1b5fe0; box-shadow: 0 0 0 3px #e9f0fd; }"
+    },
+    {
+      "name": "Interrupteur",
+      "kind": "custom",
+      "description": "Réglages du poste : connexions entrantes, accès sans surveillance, lancement au démarrage.",
+      "html": "<label class=\"ds-switch\"><input type=\"checkbox\" role=\"switch\" checked><span class=\"ds-track\"></span>Accès sans surveillance</label>",
+      "css": ".ds-switch { display: flex; align-items: center; gap: 12px; font: 14px 'Segoe UI', system-ui, sans-serif; color: #14171c; cursor: pointer; } .ds-switch input { position: absolute; opacity: 0; } .ds-track { position: relative; width: 34px; height: 20px; border-radius: 10px; background: #c3c9d2; transition: background-color 160ms ease; } .ds-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-switch input:checked + .ds-track { background: #1b5fe0; } .ds-switch input:checked + .ds-track::after { transform: translateX(14px); } .ds-switch input:focus-visible + .ds-track { outline: 2px solid #1b5fe0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ligne de machine",
+      "kind": "custom",
+      "description": "Entrée de la liste Mes machines, connexion en un clic si le mot de passe est mémorisé.",
+      "html": "<div class=\"ds-machine\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"#687180\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"1.5\" y=\"2.5\" width=\"13\" height=\"9\" rx=\"1.5\"/><path d=\"M5.5 14h5M8 11.5V14\"/></svg><span class=\"ds-machine-main\"><b>PC-SALON</b><small>731 204 865 · Windows</small></span><span class=\"ds-machine-last\">hier</span><button class=\"ds-machine-open\">Connexion</button></div>",
+      "css": ".ds-machine { display: grid; grid-template-columns: 16px 1fr auto auto; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; font-family: 'Segoe UI', system-ui, sans-serif; } .ds-machine:hover { background: #f5f7fa; } .ds-machine-main { display: grid; } .ds-machine-main b { font-size: 13.5px; font-weight: 600; color: #14171c; } .ds-machine-main small { font-size: 12px; color: #59626e; font-variant-numeric: tabular-nums; } .ds-machine-last { font-size: 12px; color: #687180; } .ds-machine-open { height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: #1b5fe0; color: #fff; font: 600 13px/1 inherit; cursor: pointer; } .ds-machine-open:hover { background: #164fbd; }"
+    },
+    {
+      "name": "Bandeau de session entrante",
+      "kind": "custom",
+      "refersTo": "incoming-banner",
+      "description": "Indique que quelqu'un contrôle ce poste, avec la coupure en un clic.",
+      "html": "<div class=\"ds-incoming\"><span>PORTABLE-THOMAS (Windows) contrôle ce poste.</span><button>Couper la session</button></div>",
+      "css": ".ds-incoming { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border: 1px solid #f5c2c2; border-radius: 10px; background: #fdeeee; color: #b42323; font: 600 14px 'Segoe UI', system-ui, sans-serif; } .ds-incoming span { flex: 1; } .ds-incoming button { height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: #d42f2f; color: #fff; font: 600 13px/1 inherit; cursor: pointer; } .ds-incoming button:hover { background: #b72424; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Le standard, bien fait",
+    "overview": "Distant reprend volontairement la forme que les utilisateurs connaissent déjà (TeamViewer, AnyDesk) : deux panneaux côte à côte, « Autoriser le contrôle à distance » et « Contrôler un ordinateur distant », une barre haute et une barre d'état. Ce choix est un engagement de l'utilisateur, pas une facilité : la réussite se mesure à la finition, pas à l'originalité. L'interface est calme et dense sans être serrée. La couleur ne sert qu'à agir (bleu) ou à signaler un état (vert, ambre, rouge). Le thème suit le système, clair ou sombre, avec les mêmes rôles.",
+    "keyCharacteristics": [
+      "Polices système, chiffres tabulaires pour les ID, mots de passe et mesures.",
+      "Panneaux blancs bordés d'un trait, sans ombre ; l'ombre est réservée à ce qui flotte (dialogues, superposition de session).",
+      "Un seul bleu d'action ; couleurs d'état uniquement là où l'état compte.",
+      "Icônes SVG dessinées au trait de 1,5 px sur une grille 16×16.",
+      "La fenêtre de contrôle s'efface : barre d'outils de 48 px, écran distant sur fond presque noir."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Le bleu ne sert qu'à l'action principale, au focus et à la sélection. Une seule action bleue par zone.", "section": "colors" },
+      { "name": "The Earned Red Rule", "body": "Le rouge signifie « quelqu'un contrôle ce poste » ou « tentative refusée ». Jamais pour décorer, jamais pour une action courante.", "section": "colors" },
+      { "name": "The Tabular Figures Rule", "body": "Tout ce qui se compare ou se dicte (ID, mots de passe, heures, débits) est en chiffres tabulaires, groupés par trois ou quatre.", "section": "typography" },
+      { "name": "The Border-Or-Shadow Rule", "body": "Un élément porte un trait ou une ombre, jamais les deux.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do garder la structure deux panneaux de la catégorie, avec l'ID et le mot de passe en Credential (30px, 600, tabulaire).",
+      "Do suivre le thème du système et définir chaque nouvelle couleur en clair et en sombre.",
+      "Do dessiner toute nouvelle icône en SVG 16×16, trait de 1,5px, extrémités arrondies.",
+      "Do viser au moins 4,5:1 de contraste pour le texte, survols compris.",
+      "Do respecter prefers-reduced-motion : les animations durent alors 1 ms."
+    ],
+    "donts": [
+      "Don't introduire d'habillage rétro, thématique ou ironique : l'utilisateur a choisi le standard de la catégorie.",
+      "Don't utiliser de caractère Unicode ou d'emoji à la place d'une icône.",
+      "Don't mettre un trait et une ombre sur le même élément, ni d'ombre sur les panneaux.",
+      "Don't employer le rouge pour autre chose qu'une session en cours ou un refus.",
+      "Don't faire boucler une animation en continu ; une progression avance et s'arrête."
+    ]
+  }
+}

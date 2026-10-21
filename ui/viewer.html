@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distant — session</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body class="viewer">
+  <div class="reveal-zone" aria-hidden="true"></div>
+
+  <header id="toolbar" class="toolbar">
+    <div class="tb-host">
+      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5.5 14h5M8 11.5V14"/></svg>
+      <div class="tb-host-text">
+        <div id="host-name" class="tb-name">Poste distant</div>
+        <div id="host-meta" class="tb-meta num"></div>
+      </div>
+    </div>
+
+    <div class="tb-controls">
+      <label id="monitor-field" class="tb-field" hidden>
+        <span>Écran</span>
+        <select id="monitor" title="Écran partagé"></select>
+      </label>
+      <label class="tb-field">
+        <span>Qualité</span>
+        <select id="quality" title="Qualité d'image"></select>
+      </label>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <button id="fit" class="tb-button" type="button" aria-pressed="false" title="Basculer entre « ajusté à la fenêtre » et la taille réelle">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+        <span id="fit-label">Ajusté</span>
+      </button>
+      <button id="fullscreen" class="tb-button" type="button" aria-pressed="false" title="Plein écran">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9"/></svg>
+        <span>Plein écran</span>
+      </button>
+    </div>
+
+    <div class="tb-end">
+      <span id="stats" class="tb-stats num">Connexion…</span>
+      <button id="disconnect" class="btn danger small" type="button">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+        Terminer
+      </button>
+    </div>
+  </header>
+
+  <main id="stage" class="stage">
+    <canvas id="screen" tabindex="0" aria-label="Écran du poste distant"></canvas>
+  </main>
+
+  <div id="overlay" class="overlay" role="status">
+    <div class="overlay-box">
+      <span class="spinner" aria-hidden="true"></span>
+      <svg class="icon ended-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5.5 14h5M8 11.5V14M6 5l4 4M10 5L6 9"/></svg>
+      <h1 id="overlay-title">Connexion</h1>
+      <p id="overlay-text">Ouverture de la session…</p>
+      <button id="overlay-close" class="btn primary" type="button" hidden>Fermer la fenêtre</button>
+    </div>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>

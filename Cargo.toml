@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/proto", "crates/relay", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+distant-proto = { path = "crates/proto" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+tokio-util = "0.7"
+rand = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Les dépendances (capture, JPEG, crypto) sont optimisées même en mode dev,
+# sinon l'encodage des images est 10 à 50 fois plus lent.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,16 @@
+{
+  "name": "distant",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Prise en main à distance minimaliste (Tauri + Rust)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "relay": "cargo run -p distant-relay --release",
+    "test": "cargo test --workspace"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.3"
+  }
+}

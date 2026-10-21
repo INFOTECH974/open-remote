@@ -1,0 +1,385 @@
+/* Fenêtre principale. */
+
+/* Colonne flexible : les bandeaux masqués ne décalent rien. */
+body.home {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Barre haute ─────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 12px 0 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.logo-bg {
+  fill: var(--accent);
+}
+.logo-line {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.product {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-strong);
+}
+.hostname {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.spacer {
+  flex: 1;
+}
+
+/* ── Session entrante ────────────────────────────────────────────────── */
+
+.incoming {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 16px 0;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-weight: 600;
+  animation: slide-down 280ms var(--ease-out);
+}
+.incoming-text {
+  flex: 1;
+  min-width: 0;
+}
+.btn.small {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* ── Panneaux ────────────────────────────────────────────────────────── */
+
+.panes {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 0;
+  padding: 16px;
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.pane-head h2 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.pane-head p {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Ce poste */
+
+.credentials {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  transition: opacity 160ms ease;
+}
+.credential dd {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 2px 0 0;
+}
+.big {
+  flex: 1;
+  min-width: 0;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.icon-btn .i-done,
+.icon-btn.done .i-copy {
+  display: none;
+}
+.icon-btn.done .i-done {
+  display: block;
+}
+body.host-off .credentials {
+  opacity: 0.45;
+}
+
+.options {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Contrôler un poste */
+
+.connect {
+  display: grid;
+  gap: 14px;
+}
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+#peer-id {
+  letter-spacing: 0.04em;
+}
+.connect-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#connect {
+  flex: none;
+  min-width: 132px;
+}
+.connect-row .check span {
+  white-space: nowrap;
+}
+
+/* Interaction signature : pendant la mise en relation et l'échange de clés,
+   une barre avance sous le libellé du bouton (une seule fois, sans boucle). */
+.progress {
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: rgb(255 255 255 / 0.85);
+  transform: scaleX(0);
+  transform-origin: left;
+  opacity: 0;
+}
+body.connecting .progress {
+  opacity: 1;
+  animation: progress 12s var(--ease-out) forwards;
+}
+@keyframes progress {
+  to {
+    transform: scaleX(0.9);
+  }
+}
+
+/* Mes machines */
+
+.machines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.machines h3 {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.machine-list:empty {
+  display: none;
+}
+.machine-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -8px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.machine {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto 16px auto 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 6px 8px;
+  border-radius: var(--radius-control);
+  transition: background-color 120ms ease;
+}
+.machine:hover,
+.machine:focus-within {
+  background: var(--surface-hover);
+}
+.m-icon {
+  color: var(--text-subtle);
+}
+.m-main {
+  display: grid;
+  min-width: 0;
+}
+.m-name {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.m-sub {
+  display: flex;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.m-os::before {
+  content: "·";
+  margin-right: 6px;
+}
+.m-last {
+  color: var(--text-subtle);
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* La clé garde sa place même absente, pour aligner les boutons. */
+.m-saved {
+  display: grid;
+  color: var(--text-subtle);
+  visibility: hidden;
+}
+.machine.saved .m-saved {
+  visibility: visible;
+}
+.m-forget {
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+.machine:hover .m-forget,
+.m-forget:focus-visible {
+  opacity: 1;
+}
+/* Fenêtre étroite : la date de dernière connexion cède la place. */
+@media (max-width: 840px) {
+  .machine {
+    grid-template-columns: 16px minmax(0, 1fr) 16px auto 32px;
+  }
+  .m-last {
+    display: none;
+  }
+}
+.machines-empty {
+  padding: 6px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Notification persistante et barre d'état ────────────────────────── */
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.notice span {
+  flex: 1;
+}
+.notice .link {
+  color: inherit;
+  font-weight: 600;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.lamp {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.lamp[data-state="online"] {
+  background: var(--success);
+}
+.lamp[data-state="connecting"] {
+  background: var(--warning);
+}
+.lamp[data-state="error"] {
+  background: var(--danger);
+}
+.status-text {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+.relay-addr {
+  color: var(--text-subtle);
+}
+.relay-addr:not(:empty)::before {
+  content: "·";
+  margin-right: 8px;
+}
+.version {
+  color: var(--text-subtle);
+}
