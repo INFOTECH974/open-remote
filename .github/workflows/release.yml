@@ -125,6 +125,9 @@ jobs:
     name: Relais (Linux)
     needs: draft
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -147,6 +150,32 @@ jobs:
           sha256sum distant-relay-x86_64-linux > distant-relay-x86_64-linux.sha256
           gh release upload "$GITHUB_REF_NAME" distant-relay-x86_64-linux distant-relay-x86_64-linux.sha256 \
             -R "$GITHUB_REPOSITORY" --clobber
+      # La même chose en image Docker, pour les serveurs qui publient des
+      # conteneurs : ghcr.io/<propriétaire>/open-remote-relay, étiquetée par
+      # la version (sans « v ») et par `latest`.
+      - name: Publier l'image Docker du relais
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/open-remote-relay"
+          version="${GITHUB_REF_NAME#v}"
+          mkdir image
+          cp target/x86_64-unknown-linux-musl/release/distant-relay image/distant-relay
+          cp crates/relay/Dockerfile image/Dockerfile
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$version" \
+            -t "$image:$version" -t "$image:latest" image
+          # Le registre refuse parfois le premier envoi (« denied », vu sur la
+          # v0.3.0, passé à la relance) : on réessaie avant d'abandonner.
+          for tag in "$version" latest; do
+            for attempt in 1 2 3 4; do
+              docker push "$image:$tag" && break
+              [ "$attempt" = 4 ] && exit 1
+              sleep 20
+            done
+          done
 
   updater:
     name: latest.json
