@@ -15,6 +15,7 @@ pub mod frame;
 pub mod relay;
 pub mod secure;
 pub mod session;
+pub mod transport;
 
 /// Port TCP par défaut du relais.
 pub const DEFAULT_RELAY_PORT: u16 = 21116;

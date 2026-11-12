@@ -26,12 +26,13 @@ use distant_proto::{
         decode, Control, Incoming, MonitorInfo, AUTH_FAILED, AUTH_RETRY, STATUS_BUSY,
         STATUS_LOCKED, STATUS_OK, TAG_FRAME,
     },
+    transport::Stream,
     PROTOCOL_VERSION,
 };
 use serde::Serialize;
 use tauri::{ipc::Channel, ipc::InvokeResponseBody, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tokio::{
-    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
+    io::{ReadHalf, WriteHalf},
     sync::mpsc,
     time::timeout,
 };
@@ -55,7 +56,7 @@ pub struct ViewerSession {
     out: mpsc::Sender<Control>,
     cancel: CancellationToken,
     /// Flux entrant, récupéré par la fenêtre du visualiseur à son ouverture.
-    reader: Mutex<Option<SecureReader<OwnedReadHalf>>>,
+    reader: Mutex<Option<SecureReader<ReadHalf<Stream>>>>,
     /// Canal d'événements de la fenêtre, connu une fois celle-ci ouverte.
     events: Mutex<Option<Channel<ViewerEvent>>>,
     /// Fichiers à envoyer, traités un par un par [`file_sender`].
@@ -150,8 +151,8 @@ pub enum Credential {
 }
 
 struct Opened {
-    reader: SecureReader<OwnedReadHalf>,
-    writer: SecureWriter<OwnedWriteHalf>,
+    reader: SecureReader<ReadHalf<Stream>>,
+    writer: SecureWriter<WriteHalf<Stream>>,
     hostname: String,
     os: String,
     monitors: Vec<MonitorInfo>,
@@ -285,7 +286,7 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
         let Incoming::Control(Control::Welcome { hostname, os, monitors }) = decode(&plaintext)? else {
             bail!("Réponse inattendue du poste distant.");
         };
-        let (rd, wr) = sock.into_split();
+        let (rd, wr) = tokio::io::split(sock);
         return Ok(Opened {
             reader: SecureReader::new(rd, opener),
             writer: SecureWriter::new(wr, sealer),
@@ -298,7 +299,7 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
 }
 
 async fn writer_loop(
-    mut writer: SecureWriter<OwnedWriteHalf>,
+    mut writer: SecureWriter<WriteHalf<Stream>>,
     mut rx: mpsc::Receiver<Control>,
     mut files: mpsc::Receiver<Vec<u8>>,
 ) {

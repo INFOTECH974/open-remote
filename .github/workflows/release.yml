@@ -1,8 +1,8 @@
 name: Release
 
 # Pousser une étiquette comme `v0.2.0` construit les installateurs Windows et
-# macOS et les attache à une release GitHub en brouillon, à relire puis à
-# publier à la main.
+# macOS, ainsi que le relais pour Linux, et les attache à une release GitHub
+# en brouillon, à relire puis à publier à la main.
 #
 # La release porte aussi ce dont les copies installées ont besoin pour se
 # mettre à jour : chaque installateur signé avec `TAURI_SIGNING_PRIVATE_KEY`
@@ -120,6 +120,52 @@ jobs:
           # côte et écraseraient les entrées les uns des autres.
           includeUpdaterJson: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+  relay:
+    name: Relais (Linux)
+    needs: draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Binaire statique (musl) : il tourne sur n'importe quelle distribution,
+      # sans rien installer. Le relais n'a aucune dépendance en C, l'éditeur de
+      # liens fourni avec Rust suffit.
+      - name: Compiler le relais
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+        run: cargo build -p distant-relay --release --target x86_64-unknown-linux-musl
+      - name: Envoyer le relais dans le brouillon
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp target/x86_64-unknown-linux-musl/release/distant-relay distant-relay-x86_64-linux
+          gh release upload "$GITHUB_REF_NAME" distant-relay-x86_64-linux -R "$GITHUB_REPOSITORY" --clobber
+      # La même chose en image Docker, pour les serveurs qui publient des
+      # conteneurs : ghcr.io/<propriétaire>/open-remote-relay, étiquetée par
+      # la version (sans « v ») et par `latest`.
+      - name: Publier l'image Docker du relais
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/open-remote-relay"
+          version="${GITHUB_REF_NAME#v}"
+          mkdir image
+          cp target/x86_64-unknown-linux-musl/release/distant-relay image/distant-relay
+          cp crates/relay/Dockerfile image/Dockerfile
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$version" \
+            -t "$image:$version" -t "$image:latest" image
+          docker push "$image:$version"
+          docker push "$image:latest"
 
   updater:
     name: latest.json

@@ -114,7 +114,7 @@ fn non_empty(s: &str) -> Option<String> {
 
 async fn control(app: &AppHandle, config: &Config, registered: &AtomicBool) -> anyhow::Result<Stop> {
     let sock = connect_relay(&config.relay).await?;
-    let (mut rd, mut wr) = sock.into_split();
+    let (mut rd, mut wr) = tokio::io::split(sock);
 
     write_json(
         &mut wr,

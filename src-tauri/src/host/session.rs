@@ -11,10 +11,11 @@ use distant_proto::{
     session::{
         decode, Control, Incoming, AUTH_FAILED, AUTH_RETRY, STATUS_BUSY, STATUS_LOCKED, STATUS_OK,
     },
+    transport::Stream,
 };
 use tauri::{AppHandle, Manager};
 use tokio::{
-    net::{tcp::OwnedWriteHalf, TcpStream},
+    io::WriteHalf,
     sync::mpsc,
     time::timeout,
 };
@@ -133,12 +134,12 @@ fn downloads_dir(app: &AppHandle) -> PathBuf {
 async fn run_session(
     app: &AppHandle,
     peer: &str,
-    sock: TcpStream,
+    sock: Stream,
     sealer: Sealer,
     opener: Opener,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    let (rd, wr) = sock.into_split();
+    let (rd, wr) = tokio::io::split(sock);
     let mut reader = SecureReader::new(rd, opener);
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(4);
     let writer = tokio::spawn(writer_loop(SecureWriter::new(wr, sealer), out_rx, cancel.clone()));
@@ -242,7 +243,7 @@ async fn run_session(
 }
 
 async fn writer_loop(
-    mut writer: SecureWriter<OwnedWriteHalf>,
+    mut writer: SecureWriter<WriteHalf<Stream>>,
     mut rx: mpsc::Receiver<Vec<u8>>,
     cancel: CancellationToken,
 ) {

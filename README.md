@@ -5,6 +5,7 @@ Windows, macOS et Linux (X11).
 
 - **ID à 9 chiffres + mot de passe**, comme les outils du marché.
 - **Relais auto-hébergé** : un petit serveur Rust met les postes en relation, sans compte ni service tiers.
+- **Passe les réseaux filtrés** : le relais se joint aussi par le port 443 (`wss://`), comme une page web.
 - **Chiffrement de bout en bout** : le relais ne voit ni l'écran, ni les frappes, ni le mot de passe.
 - **Accès sans surveillance** : mot de passe permanent, lancement au démarrage, icône dans la zone de notification.
 - Plusieurs écrans, trois niveaux de qualité d'image, clavier en touches physiques (AZERTY ↔ AZERTY sans surprise).
@@ -73,7 +74,7 @@ DISTANT_PROFILE=b ./target/debug/distant
 
 ## Héberger le relais
 
-Le relais est un simple binaire sans dépendance :
+Le relais est un simple binaire sans dépendance. Chaque version publiée en fournit un pour Linux (`distant-relay-x86_64-linux`, statique : il tourne sur n'importe quelle distribution) ; sinon, compilez-le :
 
 ```bash
 cargo build -p distant-relay --release
@@ -102,6 +103,51 @@ WantedBy=multi-user.target
 ```
 
 Dans l'application, renseignez ensuite l'adresse (`relais.exemple.fr` ou `relais.exemple.fr:21116`) et la clé dans les **réglages**.
+
+## Relais derrière un serveur web (port 443)
+
+Certains réseaux (entreprises, écoles, hôtels) ne laissent sortir que le web : le port 21116 y est bloqué et le relais semble injoignable (« délai dépassé »). Le relais sait donc aussi recevoir ses connexions en **WebSocket**, à travers le serveur web qui tient déjà le port 443. Sur le réseau, la connexion ressemble à n'importe quelle page HTTPS.
+
+Le relais reconnaît seul le mode de chaque connexion, sur le même port : rien à changer à son lancement. S'il n'est joint que par le serveur web, faites-le écouter en local (`--listen 127.0.0.1:21116`).
+
+Avec **nginx**, sur un sous-domaine dédié muni d'un certificat :
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:21116;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_buffering off;
+}
+```
+
+Avec **Caddy** : `relais.exemple.fr { reverse_proxy 127.0.0.1:21116 }`.
+
+Avec **Docker**, chaque version publie l'image `ghcr.io/infotech974/open-remote-relay` (quelques Mo, un seul binaire, utilisateur sans droits). Le port n'est publié qu'en local, c'est le serveur web qui l'ouvre au monde :
+
+```yaml
+services:
+  relay:
+    image: ghcr.io/infotech974/open-remote-relay:0.3.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:21116:21116"
+    environment:
+      DISTANT_RELAY_KEY: "un-secret-partage"
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 256m
+```
+
+Dans l'application, l'adresse du relais devient alors `wss://relais.exemple.fr`. Un poste en `wss://` et un poste en TCP direct se joignent sans difficulté : seul compte le fait qu'ils parlent au même relais.
+
+- L'en-tête `X-Real-IP` (ou `X-Forwarded-For`) donne au relais l'adresse réelle du client, pour sa limite de tentatives par adresse. Il n'est cru que s'il vient d'un serveur web de la même machine ou d'un réseau privé (cas du relais dans un conteneur).
+- Le chiffrement de bout en bout ne change pas : le serveur web ne voit, comme le relais, que des données chiffrées.
+- Les versions antérieures à la 0.3.0 ne connaissent que le TCP direct.
 
 ## Accès sans surveillance
 

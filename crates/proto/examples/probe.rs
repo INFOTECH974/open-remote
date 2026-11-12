@@ -7,7 +7,10 @@
 //! cargo run -p distant-proto --example probe -- 127.0.0.1:21116 555123456 mot-de-passe [secondes]
 //! cargo run -p distant-proto --example probe -- 127.0.0.1:21116 555123456 mot-de-passe --send fichier
 //! cargo run -p distant-proto --example probe -- --secret 555123456 mot-de-passe
+//! cargo run -p distant-proto --features tls --example probe -- wss://relais.exemple.fr 555123456 mot-de-passe
 //! ```
+//!
+//! La clé du relais, s'il en exige une, se donne par `DISTANT_RELAY_KEY`.
 
 use std::time::{Duration, Instant};
 
@@ -20,9 +23,8 @@ use distant_proto::{
         decode, encode_file_chunk, frame_seq, Control, Incoming, AUTH_FAILED, AUTH_RETRY,
         FILE_CHUNK_LEN, STATUS_OK,
     },
-    PROTOCOL_VERSION,
+    transport, PROTOCOL_VERSION,
 };
-use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,9 +48,9 @@ async fn main() -> anyhow::Result<()> {
     };
     let seconds: u64 = rest.first().and_then(|s| s.parse().ok()).unwrap_or(5);
 
-    let mut sock = TcpStream::connect(relay).await.context("relais injoignable")?;
-    sock.set_nodelay(true)?;
-    write_json(&mut sock, &ClientMsg::Connect { id: id.clone(), version: PROTOCOL_VERSION, key: None }).await?;
+    let mut sock = transport::connect(relay).await.context("relais injoignable")?;
+    let key = std::env::var("DISTANT_RELAY_KEY").ok().filter(|k| !k.is_empty());
+    write_json(&mut sock, &ClientMsg::Connect { id: id.clone(), version: PROTOCOL_VERSION, key }).await?;
     match read_json::<RelayMsg, _>(&mut sock).await? {
         RelayMsg::Paired => println!("relais : mis en relation"),
         other => bail!("relais : {other:?}"),

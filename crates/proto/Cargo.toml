@@ -5,6 +5,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Connexions `wss://` : TLS par rustls, avec les autorités de certification
+# embarquées (aucune dépendance au système). Le relais n'en a pas besoin :
+# le serveur web placé devant lui s'occupe du chiffrement.
+tls = ["tokio-tungstenite/rustls-tls-webpki-roots", "dep:rustls"]
+
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
@@ -15,6 +21,10 @@ chacha20poly1305 = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake", "connect"] }
+# Fournisseur cryptographique de rustls : `ring`, déjà présent dans l'application.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }

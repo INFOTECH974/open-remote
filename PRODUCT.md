@@ -36,6 +36,7 @@ Relais auto-hébergé et chiffrement de bout en bout (SPAKE2 + ChaCha20-Poly1305
 - Qualité d'image réglable (Rapide, Équilibrée, Haute) ; images JPEG par tuiles, accusés de réception pour limiter la latence.
 - Envoi de fichiers du poste qui contrôle vers le poste contrôlé (glisser-déposer ou barre d'outils) ; ils arrivent dans son dossier Téléchargements, sans jamais remplacer un fichier existant.
 - Mise à jour de l'application depuis les versions publiées sur GitHub, signée ; installée automatiquement dès que le poste n'est plus en session (coupé par défaut sous macOS, où chaque version redemande les autorisations système).
+- Relais joignable en TCP direct ou par le port 443 (WebSocket derrière un serveur web), pour les réseaux qui ne laissent sortir que le web.
 - Non pris en charge pour l'instant : écran de verrouillage et invites UAC de Windows (nécessiterait un service système), presse-papiers, récupération de fichiers depuis le poste contrôlé, envoi de dossiers, son.
 - Terminologie : « ID », « mot de passe », « relais », « poste distant », « session ».
 
