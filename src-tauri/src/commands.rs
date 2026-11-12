@@ -167,6 +167,16 @@ pub fn open_permission_settings(kind: String) {
     permissions::open_settings(&kind);
 }
 
+/// Efface les autorisations que macOS garde d'une version précédente : elles
+/// sont à accorder de nouveau, cette fois pour la version qui tourne.
+#[tauri::command]
+pub async fn reset_permissions(app: AppHandle) -> CmdResult {
+    let identifier = app.config().identifier.clone();
+    tauri::async_runtime::spawn_blocking(move || permissions::reset(&identifier))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Relance Distant : macOS ne relit l'autorisation d'enregistrement de
 /// l'écran qu'au lancement de l'application.
 #[tauri::command]

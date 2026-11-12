@@ -131,6 +131,20 @@ $("permissions-open").addEventListener("click", () => permissionsDialog.showModa
 $("permissions-later").addEventListener("click", () => permissionsDialog.close());
 $("permissions-restart").addEventListener("click", () => invoke("restart_app"));
 
+// Après une mise à jour, macOS montre Distant coché alors que l'autorisation
+// est celle de l'ancienne version : on l'efface pour pouvoir la redonner.
+$("permissions-reset").addEventListener("click", async () => {
+  const text = $("perm-reset-text");
+  try {
+    await invoke("reset_permissions");
+    text.textContent =
+      "Autorisations réinitialisées. Accordez-les de nouveau avec les boutons ci-dessus, puis relancez Distant.";
+    $("permissions-reset").hidden = true;
+  } catch (err) {
+    text.textContent = String(err);
+  }
+});
+
 // L'accessibilité est prise en compte tout de suite : on la voit passer à « Accordée ».
 setInterval(async () => {
   if (!overview || $("permissions-band").hidden) return;
@@ -165,12 +179,24 @@ function renderUpdate(update) {
     button.textContent = "Réessayer";
   }
   $("update-text").textContent = text;
+  // La fenêtre de mise à jour dit la même chose, avec la même action.
+  $("update-dialog-text").textContent = text;
+  $("update-dialog-install").hidden = button.hidden;
+  $("update-dialog-install").textContent = button.textContent;
+  $("update-dialog-later").textContent = button.hidden ? "Fermer" : "Plus tard";
 }
 
-$("update-install").addEventListener("click", () => {
+function installUpdate() {
   // L'avancement et les erreurs arrivent par l'événement « update-status ».
   invoke("update_install").catch(() => {});
-});
+}
+$("update-install").addEventListener("click", installUpdate);
+
+// Proposée après une recherche faite à la main : la bande du bas suffit
+// pour une version trouvée en arrière-plan.
+const updateDialog = $("update-dialog");
+$("update-dialog-install").addEventListener("click", installUpdate);
+$("update-dialog-later").addEventListener("click", () => updateDialog.close());
 
 // ── Ce poste ────────────────────────────────────────────────────────────
 
@@ -279,9 +305,14 @@ $("check-update").addEventListener("click", async () => {
     const update = await invoke("update_check");
     overview.update = update;
     renderUpdate(update);
-    result.textContent = update.available
-      ? `Distant ${update.available} est disponible.`
-      : `Distant ${overview.version} est à jour.`;
+    if (update.available) {
+      // Une version existe : on quitte les réglages pour la proposer.
+      result.textContent = `Distant ${overview.version}`;
+      settingsDialog.close();
+      updateDialog.showModal();
+    } else {
+      result.textContent = `Distant ${overview.version} est à jour.`;
+    }
   } catch (err) {
     result.textContent = String(err);
   }

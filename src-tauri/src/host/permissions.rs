@@ -8,6 +8,12 @@
 //!
 //! macOS ne relit l'autorisation d'enregistrement de l'écran qu'au lancement
 //! de l'application : après l'avoir accordée, il faut relancer Distant.
+//!
+//! Une application sans certificat Apple est reconnue par macOS à son
+//! empreinte exacte, qui change à chaque version. Après une mise à jour, les
+//! Réglages Système montrent toujours Distant coché, mais cette autorisation
+//! est celle de l'ancienne version et ne vaut plus : il faut la retirer
+//! ([`reset`]) puis l'accorder de nouveau.
 
 use serde::Serialize;
 
@@ -58,29 +64,67 @@ pub fn request_screen() {
     sys::request_screen();
 }
 
-/// Ouvre les Réglages Système sur l'autorisation à accorder (`screen` ou `input`).
+/// Ouvre les Réglages Système sur l'autorisation à accorder (`screen` ou
+/// `input`), après avoir fait inscrire Distant dans la liste par macOS.
 pub fn open_settings(kind: &str) {
     match kind {
         "screen" => {
             sys::request_screen();
             sys::open_settings("Privacy_ScreenCapture");
         }
-        _ => sys::open_settings("Privacy_Accessibility"),
+        _ => {
+            sys::request_input();
+            sys::open_settings("Privacy_Accessibility");
+        }
     }
+}
+
+/// Retire de macOS les autorisations déjà enregistrées pour l'application
+/// `identifier` : celles d'une version précédente restent affichées comme
+/// accordées sans valoir pour la version qui tourne. Tout est ensuite à
+/// accorder de nouveau.
+pub fn reset(identifier: &str) -> Result<(), String> {
+    sys::reset(identifier)
 }
 
 #[cfg(target_os = "macos")]
 mod sys {
+    use std::{ffi::c_void, process::Command, ptr};
+
+    /// Structure de CoreFoundation dont seule l'adresse nous intéresse.
+    #[repr(C)]
+    struct Opaque {
+        _private: [u8; 0],
+    }
+
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
         fn CGPreflightScreenCaptureAccess() -> bool;
         fn CGRequestScreenCaptureAccess() -> bool;
     }
 
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        static kCFBooleanTrue: *const c_void;
+        static kCFTypeDictionaryKeyCallBacks: Opaque;
+        static kCFTypeDictionaryValueCallBacks: Opaque;
+        fn CFDictionaryCreate(
+            allocator: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            count: isize,
+            key_callbacks: *const Opaque,
+            value_callbacks: *const Opaque,
+        ) -> *const c_void;
+        fn CFRelease(object: *const c_void);
+    }
+
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
-        /// Renvoie un `Boolean` de Carbon : un octet, non nul si vrai.
+        static kAXTrustedCheckOptionPrompt: *const c_void;
+        /// Renvoient un `Boolean` de Carbon : un octet, non nul si vrai.
         fn AXIsProcessTrusted() -> u8;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> u8;
     }
 
     pub fn screen() -> bool {
@@ -98,11 +142,45 @@ mod sys {
         unsafe { AXIsProcessTrusted() != 0 }
     }
 
+    /// Demande l'accessibilité avec l'option « prévenir l'utilisateur » :
+    /// macOS inscrit Distant dans la liste et propose d'ouvrir les réglages.
+    pub fn request_input() {
+        unsafe {
+            let keys = [kAXTrustedCheckOptionPrompt];
+            let values = [kCFBooleanTrue];
+            let options = CFDictionaryCreate(
+                ptr::null(),
+                keys.as_ptr(),
+                values.as_ptr(),
+                1,
+                &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks,
+            );
+            if !options.is_null() {
+                AXIsProcessTrustedWithOptions(options);
+                CFRelease(options);
+            }
+        }
+    }
+
     pub fn open_settings(pane: &str) {
         let url = format!("x-apple.systempreferences:com.apple.preference.security?{pane}");
-        if let Err(e) = std::process::Command::new("open").arg(url).spawn() {
+        if let Err(e) = Command::new("open").arg(url).spawn() {
             tracing::warn!("impossible d'ouvrir les Réglages Système : {e}");
         }
+    }
+
+    pub fn reset(identifier: &str) -> Result<(), String> {
+        for service in ["ScreenCapture", "Accessibility"] {
+            let status = Command::new("tccutil")
+                .args(["reset", service, identifier])
+                .status()
+                .map_err(|e| format!("tccutil introuvable : {e}"))?;
+            if !status.success() {
+                return Err(format!("macOS a refusé de réinitialiser l'autorisation {service}."));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -118,7 +196,13 @@ mod sys {
         true
     }
 
+    pub fn request_input() {}
+
     pub fn open_settings(_pane: &str) {}
+
+    pub fn reset(_identifier: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

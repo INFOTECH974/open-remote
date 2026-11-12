@@ -221,9 +221,24 @@
         </li>
       </ul>
       <p id="perm-restart-hint" class="perm-note">Dans la liste qui s'ouvre, activez Distant, puis relancez-le : macOS ne tient compte de l'enregistrement de l'écran qu'au lancement.</p>
+      <p class="perm-note">
+        <span id="perm-reset-text">Distant est déjà coché dans les Réglages Système ? Après une mise à jour, macOS garde l'autorisation de l'ancienne version, qui ne vaut plus.</span>
+        <button id="permissions-reset" class="link" type="button">Réinitialiser les autorisations</button>
+      </p>
       <div class="dialog-actions">
         <button id="permissions-later" class="btn" type="button">Plus tard</button>
         <button id="permissions-restart" class="btn primary" type="button">Relancer Distant</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="update-dialog" class="dialog">
+    <form method="dialog">
+      <h2>Mise à jour de Distant</h2>
+      <p id="update-dialog-text" class="update-dialog-text" role="status"></p>
+      <div class="dialog-actions">
+        <button id="update-dialog-later" class="btn" type="button">Plus tard</button>
+        <button id="update-dialog-install" class="btn primary" type="button">Installer et redémarrer</button>
       </div>
     </form>
   </dialog>

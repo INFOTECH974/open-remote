@@ -150,6 +150,7 @@ fn main() {
             commands::forget_machine,
             commands::get_permissions,
             commands::open_permission_settings,
+            commands::reset_permissions,
             commands::restart_app,
             commands::end_incoming,
             commands::connect,

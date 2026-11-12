@@ -357,6 +357,13 @@ body.connecting .progress {
   color: var(--warning);
 }
 
+/* Fenêtre de mise à jour : une phrase, deux boutons. */
+.update-dialog-text {
+  color: var(--text-muted);
+  font-size: 14px;
+  text-wrap: pretty;
+}
+
 /* Écran des autorisations de macOS : une ligne par autorisation. */
 .perm-list {
   display: grid;
