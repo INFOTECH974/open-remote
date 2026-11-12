@@ -258,6 +258,24 @@ function releaseAll() {
 }
 window.addEventListener("blur", releaseAll);
 
+// ── Presse-papiers partagé ──────────────────────────────────────────────
+// Rust surveille le presse-papiers ; la fenêtre lui dit seulement quand elle
+// est au premier plan, car ce qui est copié ici ne part vers le poste distant
+// que lorsqu'on est dans la session.
+
+function reportFocus(focused) {
+  if (!closed && info) invoke("viewer_focus", { sid, focused }).catch(() => {});
+}
+window.addEventListener("focus", () => reportFocus(true));
+window.addEventListener("blur", () => reportFocus(false));
+
+$("clipboard").addEventListener("click", () => {
+  const enabled = $("clipboard").getAttribute("aria-pressed") !== "true";
+  $("clipboard").setAttribute("aria-pressed", String(enabled));
+  invoke("viewer_set_clipboard", { sid, enabled }).catch(console.error);
+  canvas.focus();
+});
+
 // ── Barre d'outils ──────────────────────────────────────────────────────
 
 $("monitor").addEventListener("change", (e) => {
@@ -483,6 +501,12 @@ async function start() {
   }
   swapCtrlMeta = isMac !== (info.os === "macos");
   showHostWarning(info.warnings ?? []);
+  // Bouton du presse-papiers : absent si le poste distant ne le connaît pas.
+  if (info.clipboard != null) {
+    $("clipboard").hidden = false;
+    $("clipboard").setAttribute("aria-pressed", String(info.clipboard));
+    reportFocus(document.hasFocus());
+  }
   $("host-name").textContent = info.hostname;
   $("transfers-host").textContent = info.hostname;
   $("host-meta").textContent = `${info.hostId} · ${OS_LABELS[info.os] ?? info.os}`;

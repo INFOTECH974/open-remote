@@ -93,6 +93,10 @@ body.viewer {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+/* Bouton réduit à son icône (son nom est dans l'infobulle). */
+.tb-icon-only {
+  padding: 0 8px;
+}
 .tb-button:disabled {
   background: transparent;
   color: var(--text-subtle);

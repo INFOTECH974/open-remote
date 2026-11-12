@@ -276,6 +276,21 @@ pub async fn viewer_cancel_file(app: AppHandle, sid: u32, id: u32) -> CmdResult 
     Ok(())
 }
 
+/// La fenêtre de session gagne ou perd le premier plan.
+#[tauri::command]
+pub async fn viewer_focus(app: AppHandle, sid: u32, focused: bool) -> CmdResult {
+    viewer::get(&app, sid)?.set_focused(focused);
+    Ok(())
+}
+
+/// Active ou suspend le partage du presse-papiers ; le choix est retenu.
+#[tauri::command]
+pub async fn viewer_set_clipboard(app: AppHandle, state: State<'_, AppState>, sid: u32, enabled: bool) -> CmdResult {
+    viewer::get(&app, sid)?.set_clipboard_enabled(enabled);
+    state.update_config(|c| c.clipboard_sync = enabled).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn viewer_disconnect(app: AppHandle, sid: u32) -> CmdResult {
     viewer::disconnect(&app, sid);

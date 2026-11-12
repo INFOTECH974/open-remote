@@ -27,6 +27,8 @@ pub struct Config {
     /// Accès sans surveillance : secret dérivé du mot de passe permanent (hex).
     /// Le mot de passe lui-même n'est jamais enregistré.
     pub unattended_secret: Option<String>,
+    /// Partager le presse-papiers avec les postes que l'on contrôle.
+    pub clipboard_sync: bool,
     /// Installer les mises à jour sans rien demander, dès que le poste est libre.
     pub auto_update: bool,
     /// Posé juste avant une mise à jour installée fenêtre fermée : le
@@ -58,6 +60,7 @@ impl Default for Config {
             accept_incoming: true,
             quality: QUALITY_BALANCED,
             unattended_secret: None,
+            clipboard_sync: true,
             // Sous macOS, une application sans certificat perd ses autorisations
             // (enregistrement de l'écran, accessibilité) à chaque nouvelle version :
             // un Mac sans surveillance ne doit pas se mettre à jour tout seul.

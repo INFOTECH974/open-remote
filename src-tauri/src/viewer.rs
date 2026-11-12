@@ -9,7 +9,7 @@ use std::{
     collections::HashSet,
     path::PathBuf,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -23,7 +23,7 @@ use distant_proto::{
     relay::{ClientMsg, RelayMsg},
     secure::{derive_secret, handshake, normalize_password, Role, SecureReader, SecureWriter},
     session::{
-        decode, Control, Incoming, MonitorInfo, AUTH_FAILED, AUTH_RETRY, STATUS_BUSY,
+        decode, Control, Incoming, MonitorInfo, AUTH_FAILED, AUTH_RETRY, FEATURE_CLIPBOARD, STATUS_BUSY,
         STATUS_LOCKED, STATUS_OK, TAG_FRAME,
     },
     transport::Stream,
@@ -39,6 +39,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    clipboard::ClipboardSync,
     config::{from_hex, to_hex, Config},
     files::{self, SendOutcome},
     net::connect_relay,
@@ -57,6 +58,12 @@ pub struct ViewerSession {
     pub monitors: Vec<MonitorInfo>,
     /// Autorisations qui manquent au poste distant (voir `Control::Welcome`).
     pub warnings: Vec<String>,
+    /// Le poste distant sait partager son presse-papiers.
+    host_clipboard: bool,
+    /// Partage du presse-papiers voulu par l'utilisateur (bouton de la barre d'outils).
+    clipboard_enabled: AtomicBool,
+    /// Surveillance du presse-papiers local, lancée avec la fenêtre.
+    clipboard: Mutex<Option<ClipboardSync>>,
     out: mpsc::Sender<Control>,
     cancel: CancellationToken,
     /// Flux entrant, récupéré par la fenêtre du visualiseur à son ouverture.
@@ -116,6 +123,21 @@ impl ViewerSession {
         queued
     }
 
+    /// La fenêtre de session passe au premier plan ou le quitte : le
+    /// presse-papiers local n'est envoyé que lorsqu'on est dans la session.
+    pub fn set_focused(&self, focused: bool) {
+        if let Some(clipboard) = self.clipboard.lock().unwrap().as_ref() {
+            clipboard.set_active(focused && self.clipboard_enabled.load(Ordering::Relaxed));
+        }
+    }
+
+    /// Active ou suspend le partage du presse-papiers. La fenêtre est au
+    /// premier plan quand on clique sur son bouton.
+    pub fn set_clipboard_enabled(&self, enabled: bool) {
+        self.clipboard_enabled.store(enabled, Ordering::Relaxed);
+        self.set_focused(true);
+    }
+
     /// Annule l'envoi `id`, qu'il soit en cours ou encore en attente.
     pub fn cancel_file(&self, id: u32) {
         self.cancelled_files.lock().unwrap().insert(id);
@@ -132,6 +154,9 @@ pub struct SessionInfo {
     pub monitor: usize,
     pub quality: u8,
     pub warnings: Vec<String>,
+    /// Partage du presse-papiers : `null` si le poste distant ne le connaît
+    /// pas, sinon l'état du bouton.
+    pub clipboard: Option<bool>,
 }
 
 #[derive(Serialize, Clone)]
@@ -166,6 +191,7 @@ struct Opened {
     warnings: Vec<String>,
     /// Mot de passe permanent (`true`), temporaire (`false`), ou hôte trop ancien pour le dire.
     permanent: Option<bool>,
+    clipboard: bool,
 }
 
 /// Se connecte à l'hôte `id_input` et ouvre la fenêtre de contrôle.
@@ -247,6 +273,9 @@ pub async fn connect(app: &AppHandle, id_input: &str, credential: Credential) ->
         host_os: opened.os,
         monitors: opened.monitors,
         warnings: opened.warnings,
+        host_clipboard: opened.clipboard,
+        clipboard_enabled: AtomicBool::new(config.clipboard_sync),
+        clipboard: Mutex::new(None),
         out: out_tx,
         cancel: CancellationToken::new(),
         reader: Mutex::new(Some(opened.reader)),
@@ -306,6 +335,7 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
         name: crate::hostname(),
         os: std::env::consts::OS.into(),
         version: PROTOCOL_VERSION,
+        features: vec![FEATURE_CLIPBOARD.into()],
     }
     .encode();
 
@@ -324,7 +354,7 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
             bail!(WRONG_PASSWORD);
         }
         let plaintext = opener.open(&reply).map_err(|_| anyhow!(WRONG_PASSWORD))?;
-        let Incoming::Control(Control::Welcome { hostname, os, monitors, warnings, permanent }) =
+        let Incoming::Control(Control::Welcome { hostname, os, monitors, warnings, permanent, features }) =
             decode(&plaintext)?
         else {
             bail!("Réponse inattendue du poste distant.");
@@ -338,6 +368,7 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
             monitors,
             warnings,
             permanent,
+            clipboard: features.iter().any(|f| f == FEATURE_CLIPBOARD),
         });
     }
     bail!("Réponse inattendue du poste distant.")
@@ -431,6 +462,19 @@ pub fn attach(
     let cancel = session.cancel.clone();
     *session.events.lock().unwrap() = Some(on_event);
 
+    // Presse-papiers partagé : suspendu jusqu'à ce que la fenêtre dise qu'elle
+    // est au premier plan (`set_focused`).
+    if session.host_clipboard {
+        let sender = session.clone();
+        let sync = ClipboardSync::spawn(false, cancel.clone(), move |text| {
+            if sender.clipboard_enabled.load(Ordering::Relaxed) {
+                tracing::debug!("presse-papiers : {} octets envoyés au poste distant", text.len());
+                sender.send(Control::Clipboard { text });
+            }
+        });
+        *session.clipboard.lock().unwrap() = Some(sync);
+    }
+
     let events = session.clone();
     tauri::async_runtime::spawn(async move {
         let reason = loop {
@@ -451,6 +495,13 @@ pub fn attach(
             match decode(&msg) {
                 Ok(Incoming::Control(Control::Bye)) => {
                     break "Session terminée par le poste distant.".into();
+                }
+                Ok(Incoming::Control(Control::Clipboard { text })) => {
+                    if events.clipboard_enabled.load(Ordering::Relaxed) {
+                        if let Some(clipboard) = events.clipboard.lock().unwrap().as_ref() {
+                            clipboard.set(text);
+                        }
+                    }
                 }
                 Ok(Incoming::Control(Control::Stats { frames, capture, encode, wait })) => {
                     events.emit(ViewerEvent::HostStats { frames, capture, encode, wait });
@@ -480,6 +531,7 @@ pub fn attach(
         monitor,
         quality,
         warnings: session.warnings.clone(),
+        clipboard: session.host_clipboard.then(|| session.clipboard_enabled.load(Ordering::Relaxed)),
     })
 }
 

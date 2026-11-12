@@ -28,6 +28,11 @@ pub const AUTH_FAILED: &[u8] = b"AUTH_FAILED";
 /// propose un second échange SPAKE2, cette fois avec son mot de passe permanent.
 pub const AUTH_RETRY: &[u8] = b"AUTH_RETRY";
 
+/// Fonction annoncée dans `Hello` et `Welcome` : presse-papiers partagé.
+/// Un poste n'envoie `Clipboard` qu'à un correspondant qui l'annonce, car
+/// les versions antérieures à la 0.3.2 coupent la session sur un message inconnu.
+pub const FEATURE_CLIPBOARD: &str = "clipboard";
+
 /// Préréglages de qualité d'image.
 pub const QUALITY_FAST: u8 = 1;
 pub const QUALITY_BALANCED: u8 = 2;
@@ -37,7 +42,14 @@ pub const QUALITY_HIGH: u8 = 3;
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Control {
     /// Visualiseur → hôte, premier message chiffré.
-    Hello { name: String, os: String, version: u32 },
+    Hello {
+        name: String,
+        os: String,
+        version: u32,
+        /// Fonctions que ce poste comprend (voir `FEATURE_*`). Absent avant la 0.3.3.
+        #[serde(default)]
+        features: Vec<String>,
+    },
     /// Hôte → visualiseur, réponse à `Hello`.
     Welcome {
         hostname: String,
@@ -54,6 +66,9 @@ pub enum Control {
         /// avant la version 0.3.1.
         #[serde(default)]
         permanent: Option<bool>,
+        /// Fonctions que l'hôte comprend (voir `FEATURE_*`). Absent avant la 0.3.3.
+        #[serde(default)]
+        features: Vec<String>,
     },
     /// Visualiseur → hôte : démarrer l'envoi des images. Avec `stats`,
     /// l'hôte envoie aussi ses mesures (`Stats`) ; absent avant la 0.3.2.
@@ -79,6 +94,9 @@ pub enum Control {
     FileDone { id: u32, name: String },
     /// Destinataire → expéditeur : fichier refusé ou enregistrement impossible.
     FileError { id: u32, message: String },
+    /// Dans les deux sens : texte copié sur ce poste, à placer dans le
+    /// presse-papiers de l'autre.
+    Clipboard { text: String },
     /// Hôte → visualiseur, une fois par seconde si `Start` l'a demandé :
     /// où part le temps de chaque image, en millisecondes (moyennes sur la
     /// seconde écoulée). `wait` est l'attente des accusés de réception,
@@ -240,11 +258,20 @@ mod tests {
 
     #[test]
     fn messages_from_a_newer_version_are_ignored() {
-        let msg: Control = serde_json::from_slice(br#"{"t":"clipboard","text":"bonjour"}"#).unwrap();
+        let msg: Control = serde_json::from_slice(br#"{"t":"pas_encore_invente","valeur":1}"#).unwrap();
         assert_eq!(msg, Control::Unknown);
         // Un champ en plus dans un message connu ne gêne pas non plus.
         let start: Control = serde_json::from_slice(br#"{"t":"start","monitor":1,"quality":2}"#).unwrap();
         assert_eq!(start, Control::Start { monitor: 1, quality: 2, stats: false });
+    }
+
+    #[test]
+    fn hello_from_an_older_viewer_has_no_features() {
+        let json = br#"{"t":"hello","name":"PC","os":"windows","version":1}"#;
+        let Control::Hello { features, .. } = serde_json::from_slice(json).unwrap() else { panic!() };
+        assert!(features.is_empty());
+        let clipboard: Control = serde_json::from_slice(br#"{"t":"clipboard","text":"bonjour"}"#).unwrap();
+        assert_eq!(clipboard, Control::Clipboard { text: "bonjour".into() });
     }
 
     #[test]

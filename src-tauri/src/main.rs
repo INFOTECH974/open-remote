@@ -1,6 +1,7 @@
 // En version finale, pas de console noire à côté de la fenêtre sous Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clipboard;
 mod commands;
 mod config;
 mod files;
@@ -164,6 +165,8 @@ fn main() {
             commands::viewer_send_files,
             commands::viewer_cancel_file,
             commands::viewer_disconnect,
+            commands::viewer_focus,
+            commands::viewer_set_clipboard,
             update::update_check,
             update::update_install,
             update::set_auto_update,

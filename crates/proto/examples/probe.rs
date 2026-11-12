@@ -11,6 +11,8 @@
 //! ```
 //!
 //! La clé du relais, s'il en exige une, se donne par `DISTANT_RELAY_KEY`.
+//! `--clipboard <texte>` joue le presse-papiers partagé : le texte est envoyé
+//! à l'hôte, puis tout ce que l'hôte copie pendant six secondes est affiché.
 
 use std::time::{Duration, Instant};
 
@@ -21,7 +23,7 @@ use distant_proto::{
     secure::{derive_secret, handshake, Role},
     session::{
         decode, encode_file_chunk, frame_seq, Control, Incoming, AUTH_FAILED, AUTH_RETRY,
-        FILE_CHUNK_LEN, STATUS_OK,
+        FEATURE_CLIPBOARD, FILE_CHUNK_LEN, STATUS_OK,
     },
     transport, PROTOCOL_VERSION,
 };
@@ -36,6 +38,15 @@ async fn main() -> anyhow::Result<()> {
             Some(path)
         }
         Some(_) => bail!("--send attend un chemin de fichier"),
+        None => None,
+    };
+    let clipboard_text = match args.iter().position(|a| a == "--clipboard") {
+        Some(i) if i + 1 < args.len() => {
+            let text = args.remove(i + 1);
+            args.remove(i);
+            Some(text)
+        }
+        Some(_) => bail!("--clipboard attend un texte"),
         None => None,
     };
     if args.first().map(String::as_str) == Some("--secret") {
@@ -61,7 +72,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let secret = derive_secret(password, id);
-    let hello = Control::Hello { name: "probe".into(), os: "test".into(), version: PROTOCOL_VERSION }.encode();
+    let features = if clipboard_text.is_some() { vec![FEATURE_CLIPBOARD.to_string()] } else { Vec::new() };
+    let hello =
+        Control::Hello { name: "probe".into(), os: "test".into(), version: PROTOCOL_VERSION, features }.encode();
     let mut session = None;
     for round in 1..=3 {
         let (mut sealer, mut opener) = handshake(&mut sock, &secret, id, Role::Viewer).await?;
@@ -80,7 +93,9 @@ async fn main() -> anyhow::Result<()> {
         break;
     }
     let Some((mut sealer, mut opener, welcome)) = session else { bail!("pas de réponse") };
-    let Incoming::Control(Control::Welcome { hostname, os, monitors, warnings, .. }) = decode(&welcome)? else {
+    let Incoming::Control(Control::Welcome { hostname, os, monitors, warnings, features: host_features, .. }) =
+        decode(&welcome)?
+    else {
         bail!("Welcome attendu");
     };
     println!("auth : OK — hôte « {hostname} » ({os}), {} écran(s)", monitors.len());
@@ -93,6 +108,25 @@ async fn main() -> anyhow::Result<()> {
     let primary = monitors.iter().position(|m| m.primary).unwrap_or(0);
 
     let send = |sealer: &mut distant_proto::secure::Sealer, c: Control| sealer.seal(&c.encode());
+
+    if let Some(text) = clipboard_text {
+        if !host_features.iter().any(|f| f == FEATURE_CLIPBOARD) {
+            bail!("l'hôte ne connaît pas le presse-papiers partagé");
+        }
+        write_frame(&mut sock, &send(&mut sealer, Control::Clipboard { text: text.clone() })).await?;
+        println!("presse-papiers : « {text} » envoyé à l'hôte");
+        let until = Instant::now() + Duration::from_secs(6);
+        while Instant::now() < until {
+            let Ok(ct) = tokio::time::timeout(Duration::from_millis(500), read_frame(&mut sock)).await else {
+                continue;
+            };
+            if let Incoming::Control(Control::Clipboard { text }) = decode(&opener.open(&ct?)?)? {
+                println!("presse-papiers : l'hôte a copié « {text} »");
+            }
+        }
+        write_frame(&mut sock, &send(&mut sealer, Control::Bye)).await?;
+        return Ok(());
+    }
 
     if let Some(path) = send_path {
         let content = std::fs::read(&path).with_context(|| format!("lecture de {path}"))?;

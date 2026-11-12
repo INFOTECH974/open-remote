@@ -9,7 +9,8 @@ use distant_proto::{
     relay::{ClientMsg, RelayMsg},
     secure::{derive_secret, handshake, Opener, Role, Sealer, SecureReader, SecureWriter},
     session::{
-        decode, Control, Incoming, AUTH_FAILED, AUTH_RETRY, STATUS_BUSY, STATUS_LOCKED, STATUS_OK,
+        decode, Control, Incoming, AUTH_FAILED, AUTH_RETRY, FEATURE_CLIPBOARD, STATUS_BUSY, STATUS_LOCKED,
+        STATUS_OK,
     },
     transport::Stream,
 };
@@ -27,6 +28,7 @@ use super::{
     permissions::{self, Permissions},
 };
 use crate::{
+    clipboard::ClipboardSync,
     config::from_hex,
     files,
     net::connect_relay,
@@ -99,9 +101,10 @@ pub async fn handle_incoming(app: AppHandle, token: String) -> anyhow::Result<()
     };
     state.lockout.lock().unwrap().reset();
 
-    let Incoming::Control(Control::Hello { name, os, .. }) = decode(&hello)? else {
+    let Incoming::Control(Control::Hello { name, os, features, .. }) = decode(&hello)? else {
         bail!("premier message inattendu");
     };
+    let peer_clipboard = features.iter().any(|f| f == FEATURE_CLIPBOARD);
     let name = clean_label(&name);
     let os = clean_label(&os);
 
@@ -114,7 +117,8 @@ pub async fn handle_incoming(app: AppHandle, token: String) -> anyhow::Result<()
     emit_incoming(&app, IncomingInfo { active: true, name: name.clone(), os: os.clone() });
     tracing::info!("session entrante depuis « {name} » ({os})");
 
-    let result = run_session(&app, &name, permanent, sock, sealer, opener, cancel).await;
+    let peer = Peer { name: &name, permanent, clipboard: peer_clipboard };
+    let result = run_session(&app, peer, sock, sealer, opener, cancel).await;
 
     *state.incoming.lock().unwrap() = None;
     emit_incoming(&app, IncomingInfo { active: false, name: name.clone(), os });
@@ -136,10 +140,18 @@ fn downloads_dir(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|_| std::env::temp_dir())
 }
 
+/// Ce que l'on sait du poste qui contrôle, une fois authentifié.
+struct Peer<'a> {
+    name: &'a str,
+    /// Il a donné le mot de passe permanent (et non le temporaire).
+    permanent: bool,
+    /// Il sait partager le presse-papiers.
+    clipboard: bool,
+}
+
 async fn run_session(
     app: &AppHandle,
-    peer: &str,
-    permanent: bool,
+    peer: Peer<'_>,
     sock: Stream,
     sealer: Sealer,
     opener: Opener,
@@ -172,11 +184,22 @@ async fn run_session(
                 os: std::env::consts::OS.into(),
                 monitors,
                 warnings,
-                permanent: Some(permanent),
+                permanent: Some(peer.permanent),
+                features: vec![FEATURE_CLIPBOARD.into()],
             }
             .encode(),
         )
         .await?;
+
+    // Presse-papiers partagé : ce qui est copié ici part vers le poste qui
+    // contrôle, s'il sait le recevoir.
+    let clipboard = peer.clipboard.then(|| {
+        let out_tx = out_tx.clone();
+        ClipboardSync::spawn(true, cancel.clone(), move |text| {
+            tracing::debug!("presse-papiers : {} octets envoyés au poste qui contrôle", text.len());
+            let _ = out_tx.blocking_send(Control::Clipboard { text }.encode());
+        })
+    });
 
     let settings = Arc::new(CaptureSettings::new());
     let input = InputWorker::spawn(settings.clone());
@@ -241,7 +264,11 @@ async fn run_session(
                             tracing::info!("fichier reçu : {}", path.display());
                             emit_info(
                                 app,
-                                format!("Fichier reçu de « {peer} » : {name}, dans {}.", received.dir().display()),
+                                format!(
+                                    "Fichier reçu de « {} » : {name}, dans {}.",
+                                    peer.name,
+                                    received.dir().display()
+                                ),
                             );
                             Control::FileDone { id, name }
                         }
@@ -251,6 +278,12 @@ async fn run_session(
                     out_tx.send(reply.encode()).await?;
                 }
                 Control::FileCancel { id } => received.cancel(id).await,
+                Control::Clipboard { text } => {
+                    if let Some(clipboard) = &clipboard {
+                        tracing::debug!("presse-papiers : {} octets reçus du poste qui contrôle", text.len());
+                        clipboard.set(text);
+                    }
+                }
                 Control::Bye => return anyhow::Ok(()),
                 _ => {}
             }

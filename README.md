@@ -10,6 +10,7 @@ Windows, macOS et Linux (X11).
 - **Accès sans surveillance** : mot de passe permanent, lancement au démarrage, icône dans la zone de notification.
 - Plusieurs écrans, trois niveaux de qualité d'image, clavier en touches physiques (AZERTY ↔ AZERTY sans surprise).
 - **Envoi de fichiers** vers le poste contrôlé, par glisser-déposer ou depuis la barre d'outils.
+- **Presse-papiers partagé** : le texte copié sur un poste se colle sur l'autre, dans les deux sens.
 - **Mises à jour automatiques** : un poste sans surveillance reçoit les correctifs sans personne devant.
 
 ## Architecture
@@ -178,6 +179,16 @@ Une copie installée regarde la dernière version publiée sur GitHub (30 s apr�
 - **macOS** : l'installation automatique y est coupée par défaut. L'application n'étant pas signée par un certificat Apple, macOS redemande l'*Enregistrement de l'écran* et l'*Accessibilité* après chaque nouvelle version : un Mac mis à jour sans personne devant ne pourrait plus être contrôlé tant que quelqu'un ne les a pas accordées de nouveau.
 - Une mise à jour ne s'applique qu'aux copies installées par un installateur (`.exe`, `.msi`, `.dmg`, `.AppImage`), pas à un binaire lancé depuis `target/`.
 
+## Presse-papiers partagé
+
+Pendant une session, le texte copié sur un poste peut être collé sur l'autre, dans les deux sens. Il emprunte le canal chiffré de la session.
+
+- Seul le texte est partagé (jusqu'à 1 Mo), pas les images ni les fichiers : pour un fichier, utilisez l'envoi de fichiers.
+- Ce qui était dans le presse-papiers avant la session n'est pas envoyé, seulement ce qui est copié ensuite.
+- Côté poste qui contrôle, rien ne part tant que la fenêtre de session n'est pas au premier plan : un texte copié pour une autre application ne voyage que si vous revenez dans la session.
+- Le bouton presse-papiers de la barre d'outils suspend le partage dans les deux sens ; le choix est retenu.
+- Les deux postes doivent être en version 0.3.3 ou plus récente ; sinon le bouton n'apparaît pas.
+
 ## Construire les installateurs
 
 ```bash
@@ -225,7 +236,7 @@ Fichier de réglages : `%APPDATA%\app.distant.desktop\config.json` (Windows), `~
 - **macOS** : Distant doit être autorisé dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). Tant qu'il manque une autorisation, la fenêtre principale ouvre un écran *Autorisations de macOS* qui dit laquelle, ouvre le bon réglage et propose de relancer Distant (macOS ne tient compte de l'enregistrement de l'écran qu'au lancement). Le poste qui contrôle est prévenu lui aussi : sans cela il ne verrait qu'un écran vide, sans explication. L'application n'étant pas signée par un certificat Apple, ces autorisations sont à redonner après chaque nouvelle version : les Réglages Système montrent alors Distant toujours coché, mais c'est l'autorisation de l'ancienne version, qui ne vaut plus. Le lien **Réinitialiser les autorisations** de cet écran l'efface (comme `tccutil reset ScreenCapture app.distant.desktop` et `tccutil reset Accessibility app.distant.desktop`), il ne reste qu'à les accorder de nouveau.
 - **Windows** : l'écran de verrouillage, l'invite UAC et `Ctrl+Alt+Suppr` ne sont pas accessibles (il faudrait un service Windows). Une fenêtre lancée en administrateur ne peut pas être contrôlée si Distant ne l'est pas lui-même.
 - **Linux** : X11 uniquement pour l'injection clavier/souris. Sous Wayland, la capture passe par le portail du bureau quand il est disponible.
-- Pas encore de presse-papiers partagé ni de son. Les fichiers ne vont que du poste qui contrôle vers le poste contrôlé, pas dans l'autre sens.
+- Pas encore de son. Le presse-papiers ne partage que du texte. Les fichiers ne vont que du poste qui contrôle vers le poste contrôlé, pas dans l'autre sens.
 - Le clavier est transmis en touches physiques : si les deux postes n'ont pas la même disposition (AZERTY/QWERTY), les caractères suivent la disposition du poste contrôlé. `Cmd` et `Ctrl` sont échangés automatiquement entre un Mac et un PC.
 
 ## Développement
