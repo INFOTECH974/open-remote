@@ -80,10 +80,13 @@ async fn main() -> anyhow::Result<()> {
         break;
     }
     let Some((mut sealer, mut opener, welcome)) = session else { bail!("pas de réponse") };
-    let Incoming::Control(Control::Welcome { hostname, os, monitors }) = decode(&welcome)? else {
+    let Incoming::Control(Control::Welcome { hostname, os, monitors, warnings, .. }) = decode(&welcome)? else {
         bail!("Welcome attendu");
     };
     println!("auth : OK — hôte « {hostname} » ({os}), {} écran(s)", monitors.len());
+    if !warnings.is_empty() {
+        println!("  autorisations manquantes sur l'hôte : {}", warnings.join(", "));
+    }
     for (i, m) in monitors.iter().enumerate() {
         println!("  écran {i} : {} {}×{}{}", m.name, m.width, m.height, if m.primary { " (principal)" } else { "" });
     }

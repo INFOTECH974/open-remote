@@ -31,6 +31,7 @@ function render() {
   renderMachines(o.machines);
   renderIncoming(o.incoming);
   renderUpdate(o.update);
+  renderPermissions(o.permissions);
 }
 
 const groupPassword = (pw) => pw.replace(/(.{4})(?=.)/g, "$1 ");
@@ -100,6 +101,42 @@ $("notice-dismiss").addEventListener("click", () => {
   $("notice").hidden = true;
   document.body.classList.remove("has-notice");
 });
+
+// ── Autorisations de macOS ──────────────────────────────────────────────
+// Sans elles, ce Mac envoie un écran vide ou ignore la souris et le clavier,
+// et macOS ne le dit à personne. L'écran s'ouvre de lui-même une fois par
+// lancement ; ensuite une bande le rappelle tant qu'il manque quelque chose.
+
+const permissionsDialog = $("permissions-dialog");
+let permissionsAnnounced = false;
+
+function renderPermissions(permissions) {
+  const p = permissions ?? { screen: true, input: true };
+  const missing = !p.screen || !p.input;
+  $("perm-screen").dataset.granted = String(p.screen);
+  $("perm-input").dataset.granted = String(p.input);
+  $("perm-restart-hint").hidden = p.screen;
+  $("permissions-band").hidden = !missing;
+  if (missing && !permissionsAnnounced) {
+    permissionsAnnounced = true;
+    if (!permissionsDialog.open) permissionsDialog.showModal();
+  }
+  if (!missing && permissionsDialog.open) permissionsDialog.close();
+}
+
+for (const button of document.querySelectorAll(".perm-open")) {
+  button.addEventListener("click", () => invoke("open_permission_settings", { kind: button.dataset.kind }));
+}
+$("permissions-open").addEventListener("click", () => permissionsDialog.showModal());
+$("permissions-later").addEventListener("click", () => permissionsDialog.close());
+$("permissions-restart").addEventListener("click", () => invoke("restart_app"));
+
+// L'accessibilité est prise en compte tout de suite : on la voit passer à « Accordée ».
+setInterval(async () => {
+  if (!overview || $("permissions-band").hidden) return;
+  overview.permissions = await invoke("get_permissions");
+  renderPermissions(overview.permissions);
+}, 2000);
 
 // ── Mise à jour de l'application ────────────────────────────────────────
 // Le bandeau reste tant qu'une version plus récente est disponible.
@@ -317,6 +354,8 @@ function connectSaved(machine) {
       await invoke("connect_saved", { id: machine.id });
     } catch (err) {
       // Mot de passe changé sur le poste distant : on propose de le ressaisir.
+      // S'il a été oublié, la ligne du poste passe de « Connexion » à « Choisir ».
+      await refresh().catch(() => {});
       $("peer-password").focus();
       throw err;
     }
@@ -338,6 +377,13 @@ async function forget(machine) {
 listen("host-status", () => refresh());
 listen("incoming-session", (e) => renderIncoming(e.payload));
 listen("host-notice", (e) => pushNotice(e.payload.message, e.payload.kind));
+// Une session vient de commencer sans les autorisations : on le redit.
+listen("permissions-changed", (e) => {
+  if (!overview) return;
+  overview.permissions = e.payload;
+  permissionsAnnounced = false;
+  renderPermissions(e.payload);
+});
 listen("update-status", (e) => {
   if (!overview) return;
   overview.update = e.payload;

@@ -226,6 +226,9 @@ Liste flottante en bas à droite de l'écran distant (surface, coins 12px, ombre
 
 Côté poste contrôlé, chaque fichier reçu s'annonce dans la bande de notification en version neutre (surface, trait, encre) : le rouge reste réservé aux tentatives refusées.
 
+### Autorisations de macOS
+Dialogue ouvert de lui-même au lancement tant qu'une autorisation manque : une ligne par autorisation (triangle ambre, nom en 600 14px, conséquence en 13px atténué, bouton secondaire compact « Ouvrir les réglages »), remplacés par une coche verte et « Accordée » une fois donnée ; « Plus tard » et, en bouton principal, « Relancer Distant ». Fermé, il laisse une bande neutre de rappel au-dessus de la barre d'état, icône ambre et action en bleu texte. Côté contrôleur, un encart flottant sous la barre d'outils (surface, ombre Flottant, 560px) dit ce qui ne marchera pas. L'ambre signale un réglage à faire ; le rouge reste réservé aux refus.
+
 ### Mise à jour disponible
 Bande neutre au-dessus de la barre d'état (surface, trait, encre), même gabarit que la bande de notification : « Distant 0.2.1 est disponible. Vous avez la version 0.2.0. » et une action en bleu texte, « Installer et redémarrer ». Le texte suit l'avancement (téléchargement avec pourcentage, attente de la fin des sessions, installation) ; une erreur s'affiche à la place, avec « Réessayer ». Le dialogue Réglages regroupe « Serveur relais » et « Mises à jour » en deux blocs séparés par un trait.
 

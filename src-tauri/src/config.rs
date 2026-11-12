@@ -101,6 +101,13 @@ impl Config {
         Ok(())
     }
 
+    /// Oublie le mot de passe mémorisé d'un poste, qui reste dans la liste.
+    pub fn forget_secret(&mut self, id: &str) {
+        if let Some(machine) = self.machines.iter_mut().find(|m| m.id == id) {
+            machine.secret = None;
+        }
+    }
+
     pub fn machine(&self, id: &str) -> Option<&Machine> {
         self.machines.iter().find(|m| m.id == id)
     }
@@ -178,6 +185,16 @@ mod tests {
         let bytes = [0xABu8; 32];
         assert_eq!(from_hex(&to_hex(&bytes)), Some(bytes));
         assert_eq!(from_hex("zz"), None);
+    }
+
+    #[test]
+    fn forgetting_a_secret_keeps_the_machine() {
+        let mut c = Config::default();
+        c.record_machine("123456789", "Mac", "macos", Some(Some("ab".into())));
+        c.forget_secret("123456789");
+        c.forget_secret("987654321"); // poste inconnu : sans effet
+        assert_eq!(c.machines.len(), 1);
+        assert!(c.machine("123456789").unwrap().secret.is_none());
     }
 
     #[test]

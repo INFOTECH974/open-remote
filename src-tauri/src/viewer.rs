@@ -42,8 +42,10 @@ use crate::{
     config::{from_hex, to_hex, Config},
     files::{self, SendOutcome},
     net::connect_relay,
-    state::AppState,
+    state::{emit_info, AppState},
 };
+
+const WRONG_PASSWORD: &str = "Mot de passe incorrect.";
 
 /// Intervalle minimal entre deux événements de progression d'un envoi.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
@@ -53,6 +55,8 @@ pub struct ViewerSession {
     pub hostname: String,
     pub host_os: String,
     pub monitors: Vec<MonitorInfo>,
+    /// Autorisations qui manquent au poste distant (voir `Control::Welcome`).
+    pub warnings: Vec<String>,
     out: mpsc::Sender<Control>,
     cancel: CancellationToken,
     /// Flux entrant, récupéré par la fenêtre du visualiseur à son ouverture.
@@ -127,6 +131,7 @@ pub struct SessionInfo {
     pub monitors: Vec<MonitorInfo>,
     pub monitor: usize,
     pub quality: u8,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -156,6 +161,9 @@ struct Opened {
     hostname: String,
     os: String,
     monitors: Vec<MonitorInfo>,
+    warnings: Vec<String>,
+    /// Mot de passe permanent (`true`), temporaire (`false`), ou hôte trop ancien pour le dire.
+    permanent: Option<bool>,
 }
 
 /// Se connecte à l'hôte `id_input` et ouvre la fenêtre de contrôle.
@@ -167,6 +175,7 @@ pub async fn connect(app: &AppHandle, id_input: &str, credential: Credential) ->
 
     let state = app.state::<AppState>();
     let config = state.config();
+    let saved = matches!(credential, Credential::Saved);
     let (secret, remember) = match credential {
         Credential::Password { password, remember } => {
             if normalize_password(&password).is_empty() {
@@ -189,10 +198,39 @@ pub async fn connect(app: &AppHandle, id_input: &str, credential: Credential) ->
         }
     };
 
-    let opened = timeout(Duration::from_secs(40), open_session(&config, &id, &secret))
+    let opened = match timeout(Duration::from_secs(40), open_session(&config, &id, &secret))
         .await
         .map_err(|_| "Délai de connexion dépassé.".to_string())?
-        .map_err(|e| e.to_string())?;
+    {
+        Ok(opened) => opened,
+        // Le mot de passe mémorisé ne vaut plus rien (changé sur le poste, ou
+        // mot de passe temporaire mémorisé par une ancienne version) : on
+        // l'oublie, la ligne du poste propose alors de le ressaisir.
+        Err(e) if saved && e.to_string() == WRONG_PASSWORD => {
+            let _ = state.update_config(|c| c.forget_secret(&id));
+            return Err("Le mot de passe mémorisé n'est plus accepté par ce poste. \
+                        Saisissez son mot de passe permanent."
+                .into());
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+
+    // Un mot de passe temporaire change au prochain lancement du poste
+    // distant : le mémoriser promettrait une connexion qui échouera.
+    let temporary = opened.permanent == Some(false);
+    let remember = match remember {
+        Some(Some(_)) if temporary => {
+            emit_info(
+                app,
+                "Ce mot de passe est temporaire : il n'a pas été mémorisé, car il change à chaque \
+                 lancement de Distant sur ce poste. Pour le mémoriser, utilisez son mot de passe \
+                 permanent (Accès sans surveillance).",
+            );
+            Some(None)
+        }
+        None if temporary => Some(None),
+        other => other,
+    };
 
     let sid = state.next_sid.fetch_add(1, Ordering::Relaxed);
     let (out_tx, out_rx) = mpsc::channel::<Control>(256);
@@ -206,6 +244,7 @@ pub async fn connect(app: &AppHandle, id_input: &str, credential: Credential) ->
         hostname: opened.hostname,
         host_os: opened.os,
         monitors: opened.monitors,
+        warnings: opened.warnings,
         out: out_tx,
         cancel: CancellationToken::new(),
         reader: Mutex::new(Some(opened.reader)),
@@ -280,10 +319,12 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
             continue;
         }
         if reply == AUTH_FAILED {
-            bail!("Mot de passe incorrect.");
+            bail!(WRONG_PASSWORD);
         }
-        let plaintext = opener.open(&reply).map_err(|_| anyhow!("Mot de passe incorrect."))?;
-        let Incoming::Control(Control::Welcome { hostname, os, monitors }) = decode(&plaintext)? else {
+        let plaintext = opener.open(&reply).map_err(|_| anyhow!(WRONG_PASSWORD))?;
+        let Incoming::Control(Control::Welcome { hostname, os, monitors, warnings, permanent }) =
+            decode(&plaintext)?
+        else {
             bail!("Réponse inattendue du poste distant.");
         };
         let (rd, wr) = tokio::io::split(sock);
@@ -293,6 +334,8 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
             hostname,
             os,
             monitors,
+            warnings,
+            permanent,
         });
     }
     bail!("Réponse inattendue du poste distant.")
@@ -431,6 +474,7 @@ pub fn attach(
         monitors: session.monitors.clone(),
         monitor,
         quality,
+        warnings: session.warnings.clone(),
     })
 }
 

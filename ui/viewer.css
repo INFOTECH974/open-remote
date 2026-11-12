@@ -278,6 +278,48 @@ body.fullscreen .overlay {
   inset: 0;
 }
 
+/* ── Autorisations manquantes sur le poste distant ───────────────────── */
+
+.host-warning {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 32px;
+  align-items: start;
+  gap: 12px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 14px 10px 14px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+  transform: translateX(-50%);
+}
+.host-warning > .icon {
+  margin-top: 2px;
+  color: var(--warning);
+}
+.host-warning-text {
+  display: grid;
+  gap: 4px;
+}
+.host-warning-text strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.host-warning-text span {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-wrap: pretty;
+}
+.host-warning .icon-btn {
+  margin-top: -6px;
+}
+body.fullscreen .host-warning {
+  top: 12px;
+}
+
 /* ── Envoi de fichiers ───────────────────────────────────────────────── */
 
 /* Liste flottante des envois, dans le coin de l'écran distant. */

@@ -133,6 +133,12 @@
     <button id="notice-dismiss" class="link" type="button">OK</button>
   </div>
 
+  <div id="permissions-band" class="notice info permissions" role="status" hidden>
+    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3M8 11.4v.1"/></svg>
+    <span>macOS n'a pas encore autorisé Distant : ce Mac ne peut pas être contrôlé normalement.</span>
+    <button id="permissions-open" class="link" type="button">Voir les autorisations</button>
+  </div>
+
   <div id="update" class="notice info update" role="status" hidden>
     <svg class="icon notice-info" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
     <span id="update-text"></span>
@@ -184,6 +190,40 @@
       <div class="dialog-actions">
         <button id="unattended-cancel" class="btn" type="button">Annuler</button>
         <button id="unattended-save" class="btn primary" type="submit">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="permissions-dialog" class="dialog">
+    <form method="dialog">
+      <h2>Autorisations de macOS</h2>
+      <p class="hint">Pour que ce Mac puisse être contrôlé à distance, macOS doit autoriser Distant. Ces réglages ne se font que sur place, devant le Mac.</p>
+      <ul class="perm-list">
+        <li id="perm-screen" class="perm" data-granted="true">
+          <svg class="icon perm-ok" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+          <svg class="icon perm-missing" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3M8 11.4v.1"/></svg>
+          <div class="perm-text">
+            <strong>Enregistrement de l'écran</strong>
+            <span>Sans elle, le poste qui contrôle ne voit qu'un écran vide.</span>
+          </div>
+          <button class="btn small perm-open" type="button" data-kind="screen">Ouvrir les réglages</button>
+          <span class="perm-state">Accordée</span>
+        </li>
+        <li id="perm-input" class="perm" data-granted="true">
+          <svg class="icon perm-ok" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+          <svg class="icon perm-missing" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3M8 11.4v.1"/></svg>
+          <div class="perm-text">
+            <strong>Accessibilité</strong>
+            <span>Sans elle, la souris et le clavier ne répondent pas.</span>
+          </div>
+          <button class="btn small perm-open" type="button" data-kind="input">Ouvrir les réglages</button>
+          <span class="perm-state">Accordée</span>
+        </li>
+      </ul>
+      <p id="perm-restart-hint" class="perm-note">Dans la liste qui s'ouvre, activez Distant, puis relancez-le : macOS ne tient compte de l'enregistrement de l'écran qu'au lancement.</p>
+      <div class="dialog-actions">
+        <button id="permissions-later" class="btn" type="button">Plus tard</button>
+        <button id="permissions-restart" class="btn primary" type="button">Relancer Distant</button>
       </div>
     </form>
   </dialog>

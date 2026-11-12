@@ -14,6 +14,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::{
     config::{new_password, to_hex},
+    host::permissions::{self, Permissions},
     state::{AppState, HostStatus, IncomingInfo},
     update::UpdateStatus,
     viewer::{self, Credential, QueuedFile, SessionInfo, ViewerEvent},
@@ -35,6 +36,7 @@ pub struct Overview {
     autostart: bool,
     auto_update: bool,
     update: UpdateStatus,
+    permissions: Permissions,
     machines: Vec<MachineView>,
     incoming: Option<IncomingInfo>,
     version: &'static str,
@@ -72,6 +74,7 @@ pub fn get_overview(app: AppHandle, state: State<'_, AppState>) -> Overview {
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
         auto_update: config.auto_update,
         update: state.update.lock().unwrap().clone(),
+        permissions: Permissions::check(),
         machines: config
             .machines
             .iter()
@@ -150,6 +153,25 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> CmdResult {
     let autolaunch = app.autolaunch();
     let result = if enabled { autolaunch.enable() } else { autolaunch.disable() };
     result.map_err(|e| format!("Impossible de modifier le lancement au démarrage : {e}"))
+}
+
+/// Relit les autorisations système (l'écran des autorisations les suit en direct).
+#[tauri::command]
+pub fn get_permissions() -> Permissions {
+    Permissions::check()
+}
+
+/// Ouvre les Réglages Système sur l'autorisation manquante (`screen` ou `input`).
+#[tauri::command]
+pub fn open_permission_settings(kind: String) {
+    permissions::open_settings(&kind);
+}
+
+/// Relance Distant : macOS ne relit l'autorisation d'enregistrement de
+/// l'écran qu'au lancement de l'application.
+#[tauri::command]
+pub fn restart_app(app: AppHandle) {
+    app.restart();
 }
 
 #[tauri::command]

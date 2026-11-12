@@ -24,9 +24,10 @@ use tokio_util::sync::CancellationToken;
 use super::{
     capture::{self, CaptureSettings},
     input::InputWorker,
+    permissions::{self, Permissions},
 };
 use crate::{
-    config::{from_hex, Config},
+    config::from_hex,
     files,
     net::connect_relay,
     state::{emit_incoming, emit_info, emit_notice, AppState, IncomingInfo, IncomingSession},
@@ -34,8 +35,11 @@ use crate::{
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
 
-pub async fn handle_incoming(app: AppHandle, config: Config, token: String) -> anyhow::Result<()> {
+pub async fn handle_incoming(app: AppHandle, token: String) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
+    // Réglages du moment, pas ceux de la connexion au relais : un mot de passe
+    // permanent changé ou retiré doit valoir dès la connexion suivante.
+    let config = state.config();
 
     let mut sock = connect_relay(&config.relay).await?;
     write_json(&mut sock, &ClientMsg::Accept { token }).await?;
@@ -79,14 +83,15 @@ pub async fn handle_incoming(app: AppHandle, config: Config, token: String) -> a
             .await
             .map_err(|_| anyhow!("visualiseur muet"))??;
         if let Ok(plaintext) = opener.open(&first) {
-            authenticated = Some((sealer, opener, plaintext));
+            // Le premier secret essayé est toujours le mot de passe temporaire.
+            authenticated = Some((sealer, opener, plaintext, i > 0));
             break;
         }
         if i + 1 < candidates.len() {
             write_frame(&mut sock, AUTH_RETRY).await?;
         }
     }
-    let Some((sealer, opener, hello)) = authenticated else {
+    let Some((sealer, opener, hello, permanent)) = authenticated else {
         state.lockout.lock().unwrap().record_failure();
         let _ = write_frame(&mut sock, AUTH_FAILED).await;
         emit_notice(&app, "Tentative de connexion refusée : mot de passe incorrect.");
@@ -109,7 +114,7 @@ pub async fn handle_incoming(app: AppHandle, config: Config, token: String) -> a
     emit_incoming(&app, IncomingInfo { active: true, name: name.clone(), os: os.clone() });
     tracing::info!("session entrante depuis « {name} » ({os})");
 
-    let result = run_session(&app, &name, sock, sealer, opener, cancel).await;
+    let result = run_session(&app, &name, permanent, sock, sealer, opener, cancel).await;
 
     *state.incoming.lock().unwrap() = None;
     emit_incoming(&app, IncomingInfo { active: false, name: name.clone(), os });
@@ -134,6 +139,7 @@ fn downloads_dir(app: &AppHandle) -> PathBuf {
 async fn run_session(
     app: &AppHandle,
     peer: &str,
+    permanent: bool,
     sock: Stream,
     sealer: Sealer,
     opener: Opener,
@@ -144,11 +150,31 @@ async fn run_session(
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(4);
     let writer = tokio::spawn(writer_loop(SecureWriter::new(wr, sealer), out_rx, cancel.clone()));
 
+    // Autorisations de macOS : sans elles l'image est vide ou les clics sont
+    // ignorés. Le poste qui contrôle doit le savoir, et quelqu'un devant ce
+    // poste voit la demande du système.
+    let permissions = Permissions::check();
+    if !permissions.screen {
+        permissions::request_screen();
+    }
+    let warnings = permissions.warnings();
+    if !warnings.is_empty() {
+        tracing::warn!("autorisations manquantes : {}", warnings.join(", "));
+        let _ = tauri::Emitter::emit(app, "permissions-changed", permissions);
+    }
+
     let monitors = capture::list_monitors();
     let hostname = crate::hostname();
     out_tx
         .send(
-            Control::Welcome { hostname, os: std::env::consts::OS.into(), monitors }.encode(),
+            Control::Welcome {
+                hostname,
+                os: std::env::consts::OS.into(),
+                monitors,
+                warnings,
+                permanent: Some(permanent),
+            }
+            .encode(),
         )
         .await?;
 

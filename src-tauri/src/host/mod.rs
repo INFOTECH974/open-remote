@@ -6,6 +6,7 @@
 
 mod capture;
 mod input;
+pub mod permissions;
 mod session;
 
 use std::{
@@ -176,9 +177,8 @@ async fn control(app: &AppHandle, config: &Config, registered: &AtomicBool) -> a
                 match msg {
                     Some(RelayMsg::Incoming { token }) => {
                         let app = app.clone();
-                        let config = config.clone();
                         tauri::async_runtime::spawn(async move {
-                            if let Err(e) = session::handle_incoming(app, config, token).await {
+                            if let Err(e) = session::handle_incoming(app, token).await {
                                 tracing::warn!("connexion entrante : {e:#}");
                             }
                         });

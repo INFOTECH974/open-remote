@@ -1,0 +1,37 @@
+name: CI
+
+# À chaque push sur main et sur chaque pull request : tests et lint sous
+# Windows et sous macOS. Le code propre à macOS (autorisations, injection
+# clavier/souris) ne se compile que là : ce workflow le vérifie avant qu'une
+# étiquette de version ne lance les builds de release.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+          - name: macos
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings

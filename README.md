@@ -157,7 +157,7 @@ Pour joindre vos propres machines sans personne devant :
 2. Fermer la fenêtre ne quitte pas Distant : il reste dans la zone de notification. Pour l'arrêter, utilisez **Quitter Distant** dans le menu de l'icône.
 3. Depuis votre poste, cochez **Mémoriser** à la première connexion : la machine apparaît dans **Mes machines** et se rejoint ensuite en un clic.
 
-Le mot de passe temporaire (affiché dans la fenêtre, renouvelé à chaque lancement) reste valable en parallèle.
+Le mot de passe temporaire (affiché dans la fenêtre, renouvelé à chaque lancement) reste valable en parallèle. Il n'est jamais mémorisé, même avec **Mémoriser** coché : il ne vaudrait plus rien au prochain lancement du poste. Si un mot de passe mémorisé n'est plus accepté (changé sur le poste), Distant l'oublie et propose de le ressaisir.
 
 ## Envoyer des fichiers
 
@@ -222,7 +222,7 @@ Fichier de réglages : `%APPDATA%\app.distant.desktop\config.json` (Windows), `~
 
 ## Autorisations et limites connues
 
-- **macOS** : autorisez Distant dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). L'invite apparaît au premier contrôle.
+- **macOS** : Distant doit être autorisé dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). Tant qu'il manque une autorisation, la fenêtre principale ouvre un écran *Autorisations de macOS* qui dit laquelle, ouvre le bon réglage et propose de relancer Distant (macOS ne tient compte de l'enregistrement de l'écran qu'au lancement). Le poste qui contrôle est prévenu lui aussi : sans cela il ne verrait qu'un écran vide, sans explication. L'application n'étant pas signée par un certificat Apple, ces autorisations sont à redonner après chaque nouvelle version.
 - **Windows** : l'écran de verrouillage, l'invite UAC et `Ctrl+Alt+Suppr` ne sont pas accessibles (il faudrait un service Windows). Une fenêtre lancée en administrateur ne peut pas être contrôlée si Distant ne l'est pas lui-même.
 - **Linux** : X11 uniquement pour l'injection clavier/souris. Sous Wayland, la capture passe par le portail du bureau quand il est disponible.
 - Pas encore de presse-papiers partagé ni de son. Les fichiers ne vont que du poste qui contrôle vers le poste contrôlé, pas dans l'autre sens.
@@ -235,6 +235,8 @@ cargo test --workspace     # tests unitaires (protocole, chiffrement, tuiles, r�
 cargo clippy --workspace   # lint
 RUST_LOG=distant=debug npm run dev
 ```
+
+La CI (`.github/workflows/ci.yml`) lance ces tests et le lint sous Windows et sous macOS à chaque push : le code propre à macOS ne se compile que là. Pour voir l'écran des autorisations sans Mac, un build de développement accepte `DISTANT_FAKE_PERMISSIONS` (les autorisations accordées : `input`, `screen,input`, ou vide pour aucune).
 
 Le client de test `probe` se connecte à un hôte sans interface, pour vérifier la réception des images ou envoyer un fichier :
 

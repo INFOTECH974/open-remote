@@ -208,7 +208,8 @@ canvas.addEventListener(
 const SWAP = { MetaLeft: "ControlLeft", MetaRight: "ControlRight", ControlLeft: "MetaLeft", ControlRight: "MetaRight" };
 const mapCode = (code) => (swapCtrlMeta && SWAP[code]) || code;
 const pressedKeys = new Set();
-const fromChrome = (e) => e.target instanceof Element && e.target.closest("#toolbar, #overlay, #transfers");
+const fromChrome = (e) =>
+  e.target instanceof Element && e.target.closest("#toolbar, #overlay, #transfers, #host-warning");
 
 window.addEventListener("keydown", (e) => {
   if (closed || fromChrome(e) || !e.code || e.code === "Unidentified") return;
@@ -385,6 +386,31 @@ webview.onDragDropEvent((event) => {
   if (type === "drop") sendFiles(paths);
 });
 
+// ── Autorisations manquantes sur le poste distant ───────────────────────
+// Un Mac qui n'a pas autorisé Distant envoie un écran vide ou ignore la
+// souris et le clavier : il le signale, pour qu'on ne cherche pas ailleurs.
+
+function showHostWarning(warnings) {
+  const screen = warnings.includes("screen_capture");
+  const input = warnings.includes("accessibility");
+  if (!screen && !input) return;
+  const title = screen
+    ? "Ce poste n'a pas autorisé l'enregistrement de l'écran"
+    : "Ce poste n'a pas autorisé le contrôle de la souris et du clavier";
+  const effects = [];
+  if (screen) effects.push("L'image restera vide.");
+  if (input) effects.push("La souris et le clavier resteront sans effet.");
+  $("host-warning-title").textContent = title;
+  $("host-warning-detail").textContent =
+    `${effects.join(" ")} Sur le poste distant, ouvrez Distant : il indique les autorisations à accorder dans les Réglages Système, puis relancez-le.`;
+  $("host-warning").hidden = false;
+}
+
+$("host-warning-dismiss").addEventListener("click", () => {
+  $("host-warning").hidden = true;
+  canvas.focus();
+});
+
 // ── Superposition (connexion, fin de session) ───────────────────────────
 
 function showOverlay(title, text, final) {
@@ -430,6 +456,7 @@ async function start() {
     return;
   }
   swapCtrlMeta = isMac !== (info.os === "macos");
+  showHostWarning(info.warnings ?? []);
   $("host-name").textContent = info.hostname;
   $("transfers-host").textContent = info.hostname;
   $("host-meta").textContent = `${info.hostId} · ${OS_LABELS[info.os] ?? info.os}`;

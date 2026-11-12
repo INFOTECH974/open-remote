@@ -67,6 +67,18 @@
     </div>
   </div>
 
+  <div id="host-warning" class="host-warning" role="alert" hidden>
+    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3M8 11.4v.1"/></svg>
+    <div class="host-warning-text">
+      <strong id="host-warning-title"></strong>
+      <span id="host-warning-detail"></span>
+    </div>
+    <button id="host-warning-dismiss" class="icon-btn" type="button" title="Fermer">
+      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+      <span class="sr-only">Fermer</span>
+    </button>
+  </div>
+
   <aside id="transfers" class="transfers" aria-label="Envoi de fichiers" hidden>
     <h2>Envoi vers <span id="transfers-host">le poste distant</span></h2>
     <ul id="transfer-list" class="transfer-list"></ul>

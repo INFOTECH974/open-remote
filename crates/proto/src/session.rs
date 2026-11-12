@@ -39,7 +39,22 @@ pub enum Control {
     /// Visualiseur → hôte, premier message chiffré.
     Hello { name: String, os: String, version: u32 },
     /// Hôte → visualiseur, réponse à `Hello`.
-    Welcome { hostname: String, os: String, monitors: Vec<MonitorInfo> },
+    Welcome {
+        hostname: String,
+        os: String,
+        monitors: Vec<MonitorInfo>,
+        /// Ce qui manque à l'hôte pour être contrôlé normalement :
+        /// `screen_capture` (l'image restera vide), `accessibility` (souris
+        /// et clavier sans effet). Absent avant la version 0.3.1.
+        #[serde(default)]
+        warnings: Vec<String>,
+        /// Vrai si c'est le mot de passe permanent de l'hôte qui a servi, faux
+        /// si c'est son mot de passe temporaire, qui change à chaque
+        /// lancement et ne vaut donc pas la peine d'être mémorisé. Absent
+        /// avant la version 0.3.1.
+        #[serde(default)]
+        permanent: Option<bool>,
+    },
     /// Visualiseur → hôte : démarrer l'envoi des images.
     Start { monitor: usize, quality: u8 },
     SetMonitor { index: usize },
@@ -199,6 +214,14 @@ mod tests {
         // Un morceau vide est valide, un en-tête incomplet ne l'est pas.
         assert!(matches!(decode(&encode_file_chunk(7, b"")), Ok(Incoming::File { id: 7, data: [] })));
         assert!(decode(&[TAG_FILE, 0, 0]).is_err());
+    }
+
+    #[test]
+    fn welcome_from_an_older_host_has_no_warnings() {
+        let json = br#"{"t":"welcome","hostname":"Mac","os":"macos","monitors":[]}"#;
+        let Control::Welcome { warnings, permanent, .. } = serde_json::from_slice(json).unwrap() else { panic!() };
+        assert!(warnings.is_empty());
+        assert_eq!(permanent, None);
     }
 
     #[test]

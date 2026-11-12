@@ -348,8 +348,58 @@ body.connecting .progress {
   display: none;
 }
 /* Mise à jour disponible : la seule action de cette bande est en bleu texte. */
-.notice.update .link {
+.notice.update .link,
+.notice.permissions .link {
   color: var(--accent-text);
+}
+/* Autorisations manquantes : un avertissement, pas un refus (pas de rouge). */
+.notice.permissions .icon {
+  color: var(--warning);
+}
+
+/* Écran des autorisations de macOS : une ligne par autorisation. */
+.perm-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.perm {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+.perm + .perm {
+  border-top: 1px solid var(--border);
+}
+.perm-text {
+  display: grid;
+  gap: 2px;
+}
+.perm-text strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.perm-text span,
+.perm-state,
+.perm-note {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-wrap: pretty;
+}
+.perm-missing {
+  color: var(--warning);
+}
+.perm-ok {
+  color: var(--success);
+}
+.perm[data-granted="true"] .perm-missing,
+.perm[data-granted="true"] .perm-open,
+.perm[data-granted="false"] .perm-ok,
+.perm[data-granted="false"] .perm-state {
+  display: none;
 }
 
 /* Réglages : un groupe par sujet, séparés par un trait. */

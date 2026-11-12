@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "distant"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "distant-proto",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "distant-proto"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "distant-relay"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "distant-proto",
