@@ -127,21 +127,38 @@ location / {
 
 Avec **Caddy** : `relais.exemple.fr { reverse_proxy 127.0.0.1:21116 }`.
 
-Avec **Docker**, chaque version publie l'image `ghcr.io/infotech974/open-remote-relay` (quelques Mo, un seul binaire, utilisateur sans droits). Le port n'est publié qu'en local, c'est le serveur web qui l'ouvre au monde :
+Avec **Docker**, une image Alpine suffit : le conteneur télécharge le binaire du relais dans la version voulue, vérifie son empreinte, puis le lance sous un utilisateur sans droits. Le port n'est publié qu'en local, c'est le serveur web qui l'ouvre au monde. L'empreinte est dans `distant-relay-x86_64-linux.sha256`, à côté du binaire dans chaque release.
 
 ```yaml
 services:
   relay:
-    image: ghcr.io/infotech974/open-remote-relay:0.3.0
+    image: alpine:3.24.4
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:21116:21116"
+    user: "65534:65534"
+    working_dir: /relais
     environment:
       DISTANT_RELAY_KEY: "un-secret-partage"
+      RELAY_URL: https://github.com/INFOTECH974/open-remote/releases/download/v0.3.0/distant-relay-x86_64-linux
+      RELAY_SHA256: "empreinte-sha256-du-binaire"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        wget -qO distant-relay "$$RELAY_URL"
+        echo "$$RELAY_SHA256  distant-relay" | sha256sum -c -
+        chmod +x distant-relay
+        exec ./distant-relay --listen 0.0.0.0:21116
+    ports:
+      - "127.0.0.1:21116:21116"
+    tmpfs:
+      - /relais:exec,uid=65534,gid=65534,mode=0700
     read_only: true
     cap_drop: [ALL]
     mem_limit: 256m
 ```
+
+Pour changer de version, modifier `RELAY_URL` et `RELAY_SHA256`, puis redéployer.
 
 Dans l'application, l'adresse du relais devient alors `wss://relais.exemple.fr`. Un poste en `wss://` et un poste en TCP direct se joignent sans difficulté : seul compte le fait qu'ils parlent au même relais.
 
