@@ -17,7 +17,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-use crate::state::AppState;
+use crate::{host::permissions, state::AppState};
 
 /// Première recherche après le lancement : laisse le temps au réseau d'arriver.
 const FIRST_CHECK: Duration = Duration::from_secs(30);
@@ -164,7 +164,12 @@ pub fn spawn_service(app: AppHandle) {
             match check(&app).await {
                 Ok(Some(update)) => {
                     tracing::info!("Distant {} est disponible", update.version);
-                    if app.state::<AppState>().config().auto_update {
+                    // Jamais tout seul si la mise à jour ferait perdre les
+                    // autorisations de macOS : le poste ne serait plus
+                    // contrôlable tant que personne ne les a redonnées sur place.
+                    if !permissions::survive_updates() {
+                        tracing::info!("installation automatique écartée : les autorisations de macOS seraient perdues");
+                    } else if app.state::<AppState>().config().auto_update {
                         install_when_idle(&app, &update).await;
                     }
                 }

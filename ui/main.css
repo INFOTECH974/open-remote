@@ -364,6 +364,19 @@ body.connecting .progress {
   text-wrap: pretty;
 }
 
+.update-warning {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--text);
+  font-size: 13px;
+  text-wrap: pretty;
+}
+.update-warning .icon {
+  margin-top: 2px;
+  color: var(--warning);
+}
+
 /* Écran des autorisations de macOS : une ligne par autorisation. */
 .perm-list {
   display: grid;

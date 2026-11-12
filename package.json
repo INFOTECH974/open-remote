@@ -1,7 +1,7 @@
 {
   "name": "distant",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Prise en main à distance minimaliste (Tauri + Rust)",
   "scripts": {
     "tauri": "tauri",

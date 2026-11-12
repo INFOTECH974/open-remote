@@ -79,6 +79,21 @@ pub fn open_settings(kind: &str) {
     }
 }
 
+/// Vrai si les autorisations données à cette version vaudront encore pour la
+/// suivante. Faux sous macOS quand l'application n'est signée que « ad hoc »
+/// (sans certificat) : macOS la reconnaît alors à son empreinte, qui change à
+/// chaque version, et une mise à jour installée à distance fait perdre la main
+/// tant que personne ne les a redonnées sur place.
+pub fn survive_updates() -> bool {
+    if cfg!(debug_assertions) {
+        if let Ok(value) = std::env::var("DISTANT_FAKE_ADHOC") {
+            return value != "1";
+        }
+    }
+    static STABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *STABLE.get_or_init(sys::stable_signature)
+}
+
 /// Retire de macOS les autorisations déjà enregistrées pour l'application
 /// `identifier` : celles d'une version précédente restent affichées comme
 /// accordées sans valoir pour la version qui tourne. Tout est ensuite à
@@ -170,6 +185,17 @@ mod sys {
         }
     }
 
+    /// `codesign -dv` décrit la signature de l'application qui tourne ; une
+    /// signature sans certificat s'y annonce par « Signature=adhoc ». Dans le
+    /// doute (commande absente, sortie inattendue), on la tient pour instable.
+    pub fn stable_signature() -> bool {
+        let Ok(exe) = std::env::current_exe() else { return false };
+        let Ok(output) = Command::new("codesign").arg("-dv").arg(exe).output() else { return false };
+        // `codesign` écrit sa description sur la sortie d'erreur.
+        let description = String::from_utf8_lossy(&output.stderr);
+        output.status.success() && description.contains("Authority=") && !description.contains("Signature=adhoc")
+    }
+
     pub fn reset(identifier: &str) -> Result<(), String> {
         for service in ["ScreenCapture", "Accessibility"] {
             let status = Command::new("tccutil")
@@ -199,6 +225,10 @@ mod sys {
     pub fn request_input() {}
 
     pub fn open_settings(_pane: &str) {}
+
+    pub fn stable_signature() -> bool {
+        true
+    }
 
     pub fn reset(_identifier: &str) -> Result<(), String> {
         Ok(())

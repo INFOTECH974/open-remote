@@ -37,6 +37,8 @@ pub struct Overview {
     auto_update: bool,
     update: UpdateStatus,
     permissions: Permissions,
+    /// Faux si une mise à jour ferait perdre les autorisations de macOS.
+    update_keeps_permissions: bool,
     machines: Vec<MachineView>,
     incoming: Option<IncomingInfo>,
     version: &'static str,
@@ -75,6 +77,7 @@ pub fn get_overview(app: AppHandle, state: State<'_, AppState>) -> Overview {
         auto_update: config.auto_update,
         update: state.update.lock().unwrap().clone(),
         permissions: Permissions::check(),
+        update_keeps_permissions: permissions::survive_updates(),
         machines: config
             .machines
             .iter()

@@ -184,17 +184,27 @@ function renderUpdate(update) {
   $("update-dialog-install").hidden = button.hidden;
   $("update-dialog-install").textContent = button.textContent;
   $("update-dialog-later").textContent = button.hidden ? "Fermer" : "Plus tard";
+  // Mac sans signature stable : l'avertissement précède toute installation.
+  const risky = overview.updateKeepsPermissions === false;
+  $("update-dialog-warning").hidden = !risky;
+  if (risky && !button.hidden && update.phase !== "waiting") button.textContent = "Voir avant d'installer";
 }
+
+const updateDialog = $("update-dialog");
 
 function installUpdate() {
   // L'avancement et les erreurs arrivent par l'événement « update-status ».
   invoke("update_install").catch(() => {});
 }
-$("update-install").addEventListener("click", installUpdate);
+$("update-install").addEventListener("click", () => {
+  // Si la mise à jour fait perdre les autorisations de macOS, la bande
+  // n'installe pas directement : elle ouvre la fenêtre, qui prévient d'abord.
+  if (overview.updateKeepsPermissions === false) updateDialog.showModal();
+  else installUpdate();
+});
 
 // Proposée après une recherche faite à la main : la bande du bas suffit
 // pour une version trouvée en arrière-plan.
-const updateDialog = $("update-dialog");
 $("update-dialog-install").addEventListener("click", installUpdate);
 $("update-dialog-later").addEventListener("click", () => updateDialog.close());
 
@@ -285,17 +295,19 @@ $("open-settings").addEventListener("click", () => {
   $("relay").value = overview.relay;
   $("relay-key").value = overview.relayKey;
   $("auto-update").checked = overview.autoUpdate;
+  // Sur un Mac dont la signature ne survit pas aux mises à jour, Distant
+  // n'installe jamais seul : le réglage est sans effet, et on le dit.
+  const risky = overview.updateKeepsPermissions === false;
+  $("auto-update").disabled = risky;
+  $("auto-update-hint").textContent = risky
+    ? "Indisponible sur ce Mac : chaque mise à jour lui fait redemander ses autorisations, qui ne se donnent que sur place."
+    : "Installées dès que ce poste n'est plus en session.";
   $("about-version").textContent = `Distant ${overview.version}`;
   $("settings-error").textContent = "";
   settingsDialog.showModal();
   $("relay").focus();
 });
 
-if (isMac) {
-  // Sans certificat Apple, macOS redemande ses autorisations à chaque version.
-  $("auto-update-hint").textContent +=
-    " Sous macOS, il faut alors autoriser de nouveau l'enregistrement de l'écran et l'accessibilité.";
-}
 
 $("check-update").addEventListener("click", async () => {
   // Le résultat prend la place du numéro de version, sur la même ligne.

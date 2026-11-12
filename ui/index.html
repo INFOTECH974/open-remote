@@ -236,6 +236,10 @@
     <form method="dialog">
       <h2>Mise à jour de Distant</h2>
       <p id="update-dialog-text" class="update-dialog-text" role="status"></p>
+      <p id="update-dialog-warning" class="update-warning" hidden>
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.5v3M8 11.4v.1"/></svg>
+        <span>Après cette mise à jour, macOS redemandera ses autorisations, et elles ne se donnent que devant ce Mac. Si vous le contrôlez à distance, vous perdrez la main : ne l'installez que sur place, ou avec un autre moyen d'y accéder.</span>
+      </p>
       <div class="dialog-actions">
         <button id="update-dialog-later" class="btn" type="button">Plus tard</button>
         <button id="update-dialog-install" class="btn primary" type="button">Installer et redémarrer</button>
