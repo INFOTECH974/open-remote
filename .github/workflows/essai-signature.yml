@@ -1,0 +1,89 @@
+name: Essai de signature macOS
+
+# Vérifie, sur une machine Mac, qu'un certificat auto-signé permet de signer
+# une application et que deux versions différentes signées avec lui sont vues
+# par macOS comme la même application (même « designated requirement ») :
+# c'est ce qui fait garder les autorisations d'une version à l'autre.
+#
+# Lancement manuel uniquement. Le certificat est créé pour l'essai et jeté.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  essai:
+    runs-on: macos-latest
+    steps:
+      - name: Créer un certificat auto-signé de signature de code
+        run: |
+          cat > cert.cnf <<'EOF'
+          [req]
+          distinguished_name = dn
+          x509_extensions = ext
+          prompt = no
+          [dn]
+          CN = Distant Essai
+          [ext]
+          basicConstraints = critical, CA:false
+          keyUsage = critical, digitalSignature
+          extendedKeyUsage = critical, codeSigning
+          EOF
+          openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config cert.cnf -keyout key.pem -out cert.pem
+          # Format que l'outil `security` de macOS sait lire.
+          openssl pkcs12 -export -inkey key.pem -in cert.pem -name "Distant Essai" -out cert.p12 \
+            -passout pass:essai -legacy 2>/dev/null \
+            || openssl pkcs12 -export -inkey key.pem -in cert.pem -name "Distant Essai" -out cert.p12 \
+              -passout pass:essai -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
+          openssl version
+
+      - name: L'importer dans un trousseau dédié
+        run: |
+          security create-keychain -p essai build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
+          security unlock-keychain -p essai build.keychain
+          security import cert.p12 -k build.keychain -P essai -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k essai build.keychain >/dev/null
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+          echo "--- identités (toutes)"
+          security find-identity -p codesigning build.keychain
+          echo "--- identités valides"
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Signer sans faire confiance au certificat
+        id: sans-confiance
+        continue-on-error: true
+        run: |
+          printf 'int main(void){return 1;}\n' > a.c && cc a.c -o app-v1
+          codesign --force --sign "Distant Essai" --identifier app.distant.essai app-v1
+          codesign -dv --verbose=2 app-v1 2>&1 | grep -E "Authority|Signature|Identifier|TeamIdentifier"
+          codesign -d -r- app-v1
+
+      - name: Faire confiance au certificat pour la signature de code
+        if: steps.sans-confiance.outcome == 'failure'
+        run: |
+          sudo security authorizationdb write com.apple.trust-settings.admin allow
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain cert.pem
+          security find-identity -v -p codesigning build.keychain
+          printf 'int main(void){return 1;}\n' > a.c && cc a.c -o app-v1
+          codesign --force --sign "Distant Essai" --identifier app.distant.essai app-v1
+          codesign -dv --verbose=2 app-v1 2>&1 | grep -E "Authority|Signature|Identifier|TeamIdentifier"
+
+      - name: Deux versions différentes, une même identité pour macOS
+        run: |
+          printf 'int main(void){return 2;}\n' > b.c && cc b.c -o app-v2
+          codesign --force --sign "Distant Essai" --identifier app.distant.essai app-v2
+          codesign -d -r- app-v1 2>/dev/null | sed 's/^designated => //' > req1.txt
+          codesign -d -r- app-v2 2>/dev/null | sed 's/^designated => //' > req2.txt
+          echo "v1 : $(cat req1.txt)"
+          echo "v2 : $(cat req2.txt)"
+          shasum app-v1 app-v2
+          # La version 2 doit satisfaire l'exigence enregistrée pour la version 1.
+          codesign --verify -R="$(cat req1.txt)" app-v2 && echo "RÉSULTAT : la v2 satisfait l'exigence de la v1"
+          # Témoin : avec une signature ad hoc, l'exigence change à chaque version.
+          cp app-v1 adhoc-v1 && cp app-v2 adhoc-v2
+          codesign --force --sign - --identifier app.distant.essai adhoc-v1
+          codesign --force --sign - --identifier app.distant.essai adhoc-v2
+          echo "ad hoc v1 : $(codesign -d -r- adhoc-v1 2>/dev/null)"
+          echo "ad hoc v2 : $(codesign -d -r- adhoc-v2 2>/dev/null)"
