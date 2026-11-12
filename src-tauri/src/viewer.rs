@@ -3,10 +3,16 @@
 //! `connect` s'authentifie depuis la fenêtre principale, puis ouvre une
 //! fenêtre dédiée. Cette fenêtre appelle `attach` pour recevoir les images
 //! (en binaire, via un `Channel` Tauri) et envoie clavier/souris par commandes.
+//! Elle peut aussi envoyer des fichiers au poste distant (voir [`crate::files`]).
 
 use std::{
-    sync::{atomic::Ordering, Arc, Mutex},
-    time::Duration,
+    collections::HashSet,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -33,9 +39,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{from_hex, to_hex, Config},
+    files::{self, SendOutcome},
     net::connect_relay,
     state::AppState,
 };
+
+/// Intervalle minimal entre deux événements de progression d'un envoi.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct ViewerSession {
     pub host_id: String,
@@ -46,12 +56,64 @@ pub struct ViewerSession {
     cancel: CancellationToken,
     /// Flux entrant, récupéré par la fenêtre du visualiseur à son ouverture.
     reader: Mutex<Option<SecureReader<OwnedReadHalf>>>,
+    /// Canal d'événements de la fenêtre, connu une fois celle-ci ouverte.
+    events: Mutex<Option<Channel<ViewerEvent>>>,
+    /// Fichiers à envoyer, traités un par un par [`file_sender`].
+    jobs: mpsc::UnboundedSender<FileJob>,
+    next_file: AtomicU32,
+    /// Envois annulés depuis la fenêtre et pas encore pris en compte.
+    cancelled_files: Mutex<HashSet<u32>>,
+}
+
+struct FileJob {
+    id: u32,
+    path: PathBuf,
+}
+
+/// Fichier accepté (ou refusé, avec `error`) dans la file d'envoi.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedFile {
+    pub id: u32,
+    pub name: String,
+    pub size: u64,
+    pub error: Option<String>,
 }
 
 impl ViewerSession {
     /// Envoi non bloquant ; un mouvement de souris perdu si le réseau sature n'a pas d'importance.
     pub fn send(&self, control: Control) {
         let _ = self.out.try_send(control);
+    }
+
+    fn emit(&self, event: ViewerEvent) {
+        if let Some(channel) = self.events.lock().unwrap().as_ref() {
+            let _ = channel.send(event);
+        }
+    }
+
+    /// Met des fichiers en file d'envoi vers le poste distant.
+    pub async fn send_files(&self, paths: Vec<PathBuf>) -> Vec<QueuedFile> {
+        let mut queued = Vec::with_capacity(paths.len());
+        for path in paths {
+            let id = self.next_file.fetch_add(1, Ordering::Relaxed);
+            queued.push(match files::describe(&path).await {
+                Ok((name, size)) => {
+                    let _ = self.jobs.send(FileJob { id, path });
+                    QueuedFile { id, name, size, error: None }
+                }
+                Err(e) => {
+                    let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned();
+                    QueuedFile { id, name, size: 0, error: Some(e.to_string()) }
+                }
+            });
+        }
+        queued
+    }
+
+    /// Annule l'envoi `id`, qu'il soit en cours ou encore en attente.
+    pub fn cancel_file(&self, id: u32) {
+        self.cancelled_files.lock().unwrap().insert(id);
     }
 }
 
@@ -70,6 +132,13 @@ pub struct SessionInfo {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewerEvent {
     Closed { reason: String },
+    /// `sent` octets du fichier `id` sont partis.
+    FileProgress { id: u32, sent: u64 },
+    /// Tout le fichier est parti ; on attend la confirmation du poste distant.
+    FileSent { id: u32 },
+    /// Le poste distant a enregistré le fichier sous le nom `name`.
+    FileDone { id: u32, name: String },
+    FileError { id: u32, message: String },
 }
 
 /// Comment s'authentifier auprès du poste distant.
@@ -126,7 +195,10 @@ pub async fn connect(app: &AppHandle, id_input: &str, credential: Credential) ->
 
     let sid = state.next_sid.fetch_add(1, Ordering::Relaxed);
     let (out_tx, out_rx) = mpsc::channel::<Control>(256);
-    tauri::async_runtime::spawn(writer_loop(opened.writer, out_rx));
+    // Très court : la lecture des fichiers suit le débit du réseau.
+    let (file_tx, file_rx) = mpsc::channel::<Vec<u8>>(2);
+    let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
+    tauri::async_runtime::spawn(writer_loop(opened.writer, out_rx, file_rx));
 
     let session = Arc::new(ViewerSession {
         host_id: id.clone(),
@@ -136,7 +208,12 @@ pub async fn connect(app: &AppHandle, id_input: &str, credential: Credential) ->
         out: out_tx,
         cancel: CancellationToken::new(),
         reader: Mutex::new(Some(opened.reader)),
+        events: Mutex::new(None),
+        jobs: jobs_tx,
+        next_file: AtomicU32::new(1),
+        cancelled_files: Mutex::new(HashSet::new()),
     });
+    tauri::async_runtime::spawn(file_sender(session.clone(), jobs_rx, file_tx));
     state.viewers.lock().unwrap().insert(sid, session.clone());
     let saved = state.update_config(|c| c.record_machine(&id, &session.hostname, &session.host_os, remember));
     if let Err(e) = saved {
@@ -220,21 +297,70 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
     bail!("Réponse inattendue du poste distant.")
 }
 
-async fn writer_loop(mut writer: SecureWriter<OwnedWriteHalf>, mut rx: mpsc::Receiver<Control>) {
+async fn writer_loop(
+    mut writer: SecureWriter<OwnedWriteHalf>,
+    mut rx: mpsc::Receiver<Control>,
+    mut files: mpsc::Receiver<Vec<u8>>,
+) {
     let mut ping = tokio::time::interval(Duration::from_secs(10));
     ping.tick().await;
     loop {
-        let msg = tokio::select! {
+        // Clavier, souris et accusés de réception passent avant les fichiers :
+        // le poste distant reste réactif pendant un envoi.
+        let (payload, bye) = tokio::select! {
+            biased;
             msg = rx.recv() => match msg {
-                Some(msg) => msg,
+                Some(msg) => (msg.encode(), msg == Control::Bye),
                 None => break,
             },
-            _ = ping.tick() => Control::Ping,
+            _ = ping.tick() => (Control::Ping.encode(), false),
+            Some(payload) = files.recv() => (payload, false),
         };
-        let bye = msg == Control::Bye;
-        if writer.send(&msg.encode()).await.is_err() || bye {
+        if writer.send(&payload).await.is_err() || bye {
             break;
         }
+    }
+}
+
+/// Envoie les fichiers de la file, un à la fois, jusqu'à la fin de la session.
+async fn file_sender(
+    session: Arc<ViewerSession>,
+    mut jobs: mpsc::UnboundedReceiver<FileJob>,
+    out: mpsc::Sender<Vec<u8>>,
+) {
+    let cancel = session.cancel.clone();
+    loop {
+        let job = tokio::select! {
+            _ = cancel.cancelled() => break,
+            job = jobs.recv() => match job {
+                Some(job) => job,
+                None => break,
+            },
+        };
+        let id = job.id;
+        let cancelled = || session.cancelled_files.lock().unwrap().contains(&id);
+        let mut last_progress = Instant::now();
+        let progress = |sent| {
+            if last_progress.elapsed() >= PROGRESS_INTERVAL {
+                last_progress = Instant::now();
+                session.emit(ViewerEvent::FileProgress { id, sent });
+            }
+        };
+        // Annulé avant d'avoir commencé : rien n'est envoyé.
+        let result = if cancelled() {
+            Ok(SendOutcome::Cancelled)
+        } else {
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                result = files::send_file(id, &job.path, &out, cancelled, progress) => result,
+            }
+        };
+        match result {
+            Ok(SendOutcome::Sent) => session.emit(ViewerEvent::FileSent { id }),
+            Ok(SendOutcome::Cancelled) => {}
+            Err(e) => session.emit(ViewerEvent::FileError { id, message: e.to_string() }),
+        }
+        session.cancelled_files.lock().unwrap().remove(&id);
     }
 }
 
@@ -257,7 +383,9 @@ pub fn attach(
     let monitor = session.monitors.iter().position(|m| m.primary).unwrap_or(0);
     let quality = state.config().quality;
     let cancel = session.cancel.clone();
+    *session.events.lock().unwrap() = Some(on_event);
 
+    let events = session.clone();
     tauri::async_runtime::spawn(async move {
         let reason = loop {
             let msg = tokio::select! {
@@ -278,12 +406,20 @@ pub fn attach(
                 Ok(Incoming::Control(Control::Bye)) => {
                     break "Session terminée par le poste distant.".into();
                 }
+                Ok(Incoming::Control(Control::FileDone { id, name })) => {
+                    events.emit(ViewerEvent::FileDone { id, name });
+                }
+                Ok(Incoming::Control(Control::FileError { id, message })) => {
+                    // Le poste distant a abandonné ce fichier : inutile d'envoyer la suite.
+                    events.cancel_file(id);
+                    events.emit(ViewerEvent::FileError { id, message });
+                }
                 Ok(_) => {}
                 Err(_) => break "Message invalide reçu du poste distant.".into(),
             }
         };
         cancel.cancel();
-        let _ = on_event.send(ViewerEvent::Closed { reason });
+        events.emit(ViewerEvent::Closed { reason });
     });
 
     session.send(Control::Start { monitor, quality });

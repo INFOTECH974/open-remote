@@ -335,6 +335,18 @@ body.connecting .progress {
 .notice span {
   flex: 1;
 }
+.notice.info {
+  border-top-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.notice.info .icon {
+  color: var(--text-muted);
+}
+.notice.info .notice-alert,
+.notice:not(.info) .notice-info {
+  display: none;
+}
 .notice .link {
   color: inherit;
   font-weight: 600;

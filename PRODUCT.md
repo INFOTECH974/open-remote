@@ -34,7 +34,8 @@ Relais auto-hébergé et chiffrement de bout en bout (SPAKE2 + ChaCha20-Poly1305
 - Une seule session entrante à la fois ; verrouillage temporaire après trois mots de passe erronés.
 - Plusieurs écrans : choix de l'écran partagé pendant la session.
 - Qualité d'image réglable (Rapide, Équilibrée, Haute) ; images JPEG par tuiles, accusés de réception pour limiter la latence.
-- Non pris en charge pour l'instant : écran de verrouillage et invites UAC de Windows (nécessiterait un service système), presse-papiers, transfert de fichiers, son.
+- Envoi de fichiers du poste qui contrôle vers le poste contrôlé (glisser-déposer ou barre d'outils) ; ils arrivent dans son dossier Téléchargements, sans jamais remplacer un fichier existant.
+- Non pris en charge pour l'instant : écran de verrouillage et invites UAC de Windows (nécessiterait un service système), presse-papiers, récupération de fichiers depuis le poste contrôlé, envoi de dossiers, son.
 - Terminologie : « ID », « mot de passe », « relais », « poste distant », « session ».
 
 ## Brand Commitments

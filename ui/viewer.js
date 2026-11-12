@@ -1,6 +1,8 @@
-// Fenêtre de contrôle : affiche l'écran distant et transmet clavier/souris.
+// Fenêtre de contrôle : affiche l'écran distant, transmet clavier/souris et
+// envoie des fichiers au poste distant.
 const { invoke, Channel } = window.__TAURI__.core;
 const appWindow = window.__TAURI__.window.getCurrentWindow();
+const webview = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 
 const $ = (id) => document.getElementById(id);
 const sid = Number(new URLSearchParams(location.search).get("sid"));
@@ -206,7 +208,7 @@ canvas.addEventListener(
 const SWAP = { MetaLeft: "ControlLeft", MetaRight: "ControlRight", ControlLeft: "MetaLeft", ControlRight: "MetaRight" };
 const mapCode = (code) => (swapCtrlMeta && SWAP[code]) || code;
 const pressedKeys = new Set();
-const fromChrome = (e) => e.target instanceof Element && e.target.closest("#toolbar, #overlay");
+const fromChrome = (e) => e.target instanceof Element && e.target.closest("#toolbar, #overlay, #transfers");
 
 window.addEventListener("keydown", (e) => {
   if (closed || fromChrome(e) || !e.code || e.code === "Unidentified") return;
@@ -268,6 +270,121 @@ $("disconnect").addEventListener("click", async () => {
 
 $("overlay-close").addEventListener("click", () => appWindow.close());
 
+// ── Envoi de fichiers ───────────────────────────────────────────────────
+// Par le bouton de la barre d'outils ou en déposant des fichiers dans la
+// fenêtre. Ils partent un par un et arrivent dans le dossier Téléchargements
+// du poste distant.
+
+const transfers = new Map(); // id → { id, name, size, state, row, timer }
+const ACTIVE = new Set(["queued", "sending"]);
+// Un petit fichier peut être confirmé avant que sa ligne ne soit affichée.
+let sendsInFlight = 0;
+let earlyEvents = [];
+
+function formatSize(bytes) {
+  if (bytes < 1000) return `${bytes} octet${bytes > 1 ? "s" : ""}`;
+  const units = ["Ko", "Mo", "Go", "To"];
+  let value = bytes / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  const digits = value < 10 ? 1 : 0;
+  return `${value.toLocaleString("fr-FR", { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${units[unit]}`;
+}
+
+function setTransfer(t, state, text, ratio) {
+  t.state = state;
+  t.row.dataset.state = state;
+  t.row.querySelector(".transfer-meta").textContent = text;
+  if (ratio !== undefined) t.row.querySelector(".transfer-bar span").style.transform = `scaleX(${ratio})`;
+  const button = t.row.querySelector(".transfer-dismiss");
+  button.title = ACTIVE.has(state) ? "Annuler l'envoi" : "Retirer de la liste";
+  button.setAttribute("aria-label", `${button.title} : ${t.name}`);
+}
+
+function addTransfer(file) {
+  const row = $("transfer-template").content.firstElementChild.cloneNode(true);
+  const t = { id: file.id, name: file.name, size: file.size, state: "", row, timer: 0 };
+  const name = row.querySelector(".transfer-name");
+  name.textContent = file.name;
+  name.title = file.name;
+  row.querySelector(".transfer-dismiss").addEventListener("click", () => {
+    dismissTransfer(t);
+    canvas.focus();
+  });
+  transfers.set(t.id, t);
+  $("transfer-list").append(row);
+  if (file.error) setTransfer(t, "error", file.error);
+  else setTransfer(t, "queued", `En attente · ${formatSize(file.size)}`, 0);
+  $("transfers").hidden = false;
+}
+
+function dismissTransfer(t) {
+  if (ACTIVE.has(t.state) && !closed) invoke("viewer_cancel_file", { sid, id: t.id }).catch(() => {});
+  clearTimeout(t.timer);
+  t.row.remove();
+  transfers.delete(t.id);
+  $("transfers").hidden = transfers.size === 0;
+}
+
+function onFileEvent(event) {
+  const t = transfers.get(event.id);
+  if (!t) {
+    if (sendsInFlight) earlyEvents.push(event);
+    return;
+  }
+  if (event.type === "file_progress") {
+    const ratio = t.size ? Math.min(1, event.sent / t.size) : 1;
+    const percent = Math.floor(ratio * 100);
+    setTransfer(t, "sending", `${formatSize(event.sent)} sur ${formatSize(t.size)} · ${percent} %`, ratio);
+  } else if (event.type === "file_sent") {
+    setTransfer(t, "saving", "Enregistrement sur le poste distant…", 1);
+  } else if (event.type === "file_done") {
+    // Espaces insécables : un guillemet ne reste jamais seul en fin de ligne.
+    const renamed = event.name !== t.name ? ` sous le nom « ${event.name} »` : "";
+    setTransfer(t, "done", `Reçu dans Téléchargements${renamed}`, 1);
+    // Une réussite s'efface seule ; une erreur reste jusqu'à ce qu'on la retire.
+    t.timer = setTimeout(() => dismissTransfer(t), 8000);
+  } else if (event.type === "file_error") {
+    setTransfer(t, "error", event.message);
+  }
+}
+
+async function sendFiles(paths) {
+  if (closed || !info || !paths || !paths.length) return;
+  sendsInFlight += 1;
+  try {
+    const files = await invoke("viewer_send_files", { sid, paths });
+    files.forEach(addTransfer);
+  } catch (err) {
+    console.error("envoi impossible", err);
+  } finally {
+    sendsInFlight -= 1;
+    const events = earlyEvents;
+    earlyEvents = [];
+    events.forEach(onFileEvent);
+  }
+}
+
+$("send-file").addEventListener("click", async () => {
+  if (closed) return;
+  try {
+    await sendFiles(await invoke("viewer_pick_files"));
+  } catch (err) {
+    console.error("sélection de fichiers impossible", err);
+  }
+  canvas.focus();
+});
+
+webview.onDragDropEvent((event) => {
+  const { type, paths } = event.payload;
+  const hovering = (type === "enter" || type === "over") && !closed && Boolean(info);
+  document.body.classList.toggle("dropping", hovering);
+  if (type === "drop") sendFiles(paths);
+});
+
 // ── Superposition (connexion, fin de session) ───────────────────────────
 
 function showOverlay(title, text, final) {
@@ -287,11 +404,20 @@ function hideOverlay() {
 
 const onEvent = new Channel();
 onEvent.onmessage = (event) => {
-  if (event.type !== "closed" || closed) return;
+  if (event.type !== "closed") {
+    onFileEvent(event);
+    return;
+  }
+  if (closed) return;
   releaseAll();
   closed = true;
   document.body.classList.add("ended");
+  document.body.classList.remove("dropping");
+  $("send-file").disabled = true;
   $("stats").textContent = "Déconnecté";
+  for (const t of transfers.values()) {
+    if (t.state !== "done" && t.state !== "error") setTransfer(t, "error", "Session terminée avant la fin de l'envoi.");
+  }
   showOverlay("Session terminée", event.reason, true);
 };
 
@@ -305,6 +431,7 @@ async function start() {
   }
   swapCtrlMeta = isMac !== (info.os === "macos");
   $("host-name").textContent = info.hostname;
+  $("transfers-host").textContent = info.hostname;
   $("host-meta").textContent = `${info.hostId} · ${OS_LABELS[info.os] ?? info.os}`;
   $("overlay-text").textContent = `Réception de l'écran de ${info.hostname}…`;
 

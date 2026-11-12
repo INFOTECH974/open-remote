@@ -3,6 +3,7 @@
 
 mod commands;
 mod config;
+mod files;
 mod host;
 mod net;
 mod state;
@@ -89,6 +90,7 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let file = match &profile {
                 Some(p) => format!("config-{p}.json"),
@@ -139,6 +141,9 @@ fn main() {
             commands::viewer_input,
             commands::viewer_set_monitor,
             commands::viewer_set_quality,
+            commands::viewer_pick_files,
+            commands::viewer_send_files,
+            commands::viewer_cancel_file,
             commands::viewer_disconnect,
         ])
         .run(tauri::generate_context!())

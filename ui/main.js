@@ -84,10 +84,12 @@ function renderMachines(machines) {
 
 // ── Notifications : restent affichées tant qu'on ne les a pas lues ──────
 
-function pushNotice(message) {
+function pushNotice(message, kind) {
   const notice = $("notice");
   const time = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   $("notice-text").textContent = `${message} (${time})`;
+  // « info » (fichier reçu) : même bandeau, sans le rouge réservé aux refus.
+  notice.classList.toggle("info", kind === "info");
   notice.hidden = false;
   document.body.classList.add("has-notice");
 }
@@ -273,7 +275,7 @@ async function forget(machine) {
 
 listen("host-status", () => refresh());
 listen("incoming-session", (e) => renderIncoming(e.payload));
-listen("host-notice", (e) => pushNotice(e.payload.message));
+listen("host-notice", (e) => pushNotice(e.payload.message, e.payload.kind));
 
 // Les « il y a 5 min » vieillissent avec la fenêtre.
 setInterval(() => overview && renderMachines(overview.machines), 60_000);

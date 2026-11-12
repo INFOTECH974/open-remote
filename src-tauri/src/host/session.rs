@@ -1,7 +1,7 @@
 //! Une session entrante : authentification, envoi des images, réception des
-//! événements clavier/souris.
+//! événements clavier/souris et des fichiers.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, bail};
 use distant_proto::{
@@ -26,8 +26,9 @@ use super::{
 };
 use crate::{
     config::{from_hex, Config},
+    files,
     net::connect_relay,
-    state::{emit_incoming, emit_notice, AppState, IncomingInfo, IncomingSession},
+    state::{emit_incoming, emit_info, emit_notice, AppState, IncomingInfo, IncomingSession},
 };
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -107,7 +108,7 @@ pub async fn handle_incoming(app: AppHandle, config: Config, token: String) -> a
     emit_incoming(&app, IncomingInfo { active: true, name: name.clone(), os: os.clone() });
     tracing::info!("session entrante depuis « {name} » ({os})");
 
-    let result = run_session(sock, sealer, opener, cancel).await;
+    let result = run_session(&app, &name, sock, sealer, opener, cancel).await;
 
     *state.incoming.lock().unwrap() = None;
     emit_incoming(&app, IncomingInfo { active: false, name: name.clone(), os });
@@ -121,7 +122,17 @@ fn clean_label(s: &str) -> String {
     if cleaned.trim().is_empty() { "inconnu".into() } else { cleaned }
 }
 
+/// Dossier où arrivent les fichiers envoyés par le visualiseur.
+fn downloads_dir(app: &AppHandle) -> PathBuf {
+    let path = app.path();
+    path.download_dir()
+        .or_else(|_| path.home_dir().map(|home| home.join("Downloads")))
+        .unwrap_or_else(|_| std::env::temp_dir())
+}
+
 async fn run_session(
+    app: &AppHandle,
+    peer: &str,
     sock: TcpStream,
     sealer: Sealer,
     opener: Opener,
@@ -161,10 +172,20 @@ async fn run_session(
         });
     }
 
+    let mut received = files::Receiver::new(downloads_dir(app));
     let read_loop = async {
         loop {
             let msg = reader.recv().await?;
-            let Incoming::Control(control) = decode(&msg)? else { continue };
+            let control = match decode(&msg)? {
+                Incoming::Control(control) => control,
+                Incoming::File { id, data } => {
+                    if let Err(e) = received.chunk(id, data).await {
+                        out_tx.send(Control::FileError { id, message: e.to_string() }.encode()).await?;
+                    }
+                    continue;
+                }
+                Incoming::Frame(_) => continue,
+            };
             match control {
                 Control::Start { monitor, quality } => {
                     if let Some(acks) = ack_rx.take() {
@@ -179,6 +200,29 @@ async fn run_session(
                     let _ = ack_tx.send(seq);
                 }
                 Control::Input { event } => input.send(event),
+                Control::FileStart { id, name, size } => {
+                    if let Err(e) = received.start(id, &name, size).await {
+                        out_tx.send(Control::FileError { id, message: e.to_string() }.encode()).await?;
+                    }
+                }
+                Control::FileEnd { id } => {
+                    let reply = match received.finish(id).await {
+                        Ok(Some(path)) => {
+                            let name =
+                                path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                            tracing::info!("fichier reçu : {}", path.display());
+                            emit_info(
+                                app,
+                                format!("Fichier reçu de « {peer} » : {name}, dans {}.", received.dir().display()),
+                            );
+                            Control::FileDone { id, name }
+                        }
+                        Ok(None) => continue,
+                        Err(e) => Control::FileError { id, message: e.to_string() },
+                    };
+                    out_tx.send(reply.encode()).await?;
+                }
+                Control::FileCancel { id } => received.cancel(id).await,
                 Control::Bye => return anyhow::Ok(()),
                 _ => {}
             }

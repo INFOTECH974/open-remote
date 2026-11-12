@@ -5,14 +5,17 @@ use distant_proto::{
     secure::{derive_secret, normalize_password},
     session::{Control, InputEvent, QUALITY_FAST, QUALITY_HIGH},
 };
+use std::path::PathBuf;
+
 use serde::Serialize;
-use tauri::{ipc::Channel, AppHandle, State};
+use tauri::{ipc::Channel, AppHandle, State, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::{
     config::{new_password, to_hex},
     state::{AppState, HostStatus, IncomingInfo},
-    viewer::{self, Credential, SessionInfo, ViewerEvent},
+    viewer::{self, Credential, QueuedFile, SessionInfo, ViewerEvent},
 };
 
 type CmdResult<T = ()> = Result<T, String>;
@@ -205,6 +208,34 @@ pub async fn viewer_set_quality(app: AppHandle, state: State<'_, AppState>, sid:
     let quality = quality.clamp(QUALITY_FAST, QUALITY_HIGH);
     viewer::get(&app, sid)?.send(Control::SetQuality { quality });
     state.update_config(|c| c.quality = quality).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Ouvre le sélecteur de fichiers du système ; liste vide si l'utilisateur annule.
+#[tauri::command]
+pub async fn viewer_pick_files(window: WebviewWindow) -> CmdResult<Vec<PathBuf>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    window
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Envoyer des fichiers au poste distant")
+        .pick_files(move |paths| {
+            let _ = tx.send(paths);
+        });
+    let paths = rx.await.map_err(|e| e.to_string())?.unwrap_or_default();
+    Ok(paths.into_iter().filter_map(|p| p.into_path().ok()).collect())
+}
+
+/// Met des fichiers en file d'envoi vers le poste distant.
+#[tauri::command]
+pub async fn viewer_send_files(app: AppHandle, sid: u32, paths: Vec<PathBuf>) -> CmdResult<Vec<QueuedFile>> {
+    Ok(viewer::get(&app, sid)?.send_files(paths).await)
+}
+
+#[tauri::command]
+pub async fn viewer_cancel_file(app: AppHandle, sid: u32, id: u32) -> CmdResult {
+    viewer::get(&app, sid)?.cancel_file(id);
     Ok(())
 }
 

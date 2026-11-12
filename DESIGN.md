@@ -221,6 +221,11 @@ Icône d'écran, nom en 600 13,5px, ID et système en meta, date, clé si le mot
 ### Barre d'état
 Voyant de 8px (vert, ambre, rouge, gris), message en encre, adresse du relais et version en encre discrète.
 
+### Envoi de fichiers (fenêtre de contrôle)
+Liste flottante en bas à droite de l'écran distant (surface, coins 12px, ombre Flottant, 340px), visible seulement tant qu'elle contient un envoi. Par ligne : icône de fichier, nom en 600 13,5px, état en meta tabulaire (« 1,2 Mo sur 120 Mo · 1 % », « Reçu dans Téléchargements »), barre de progression bleue de 3px, bouton icône pour annuler ou retirer. Une réussite affiche une coche verte et s'efface seule après 8 s ; une erreur reste en encre rouge jusqu'à ce qu'on la retire. Pendant le survol de fichiers, un voile sombre couvre l'écran distant avec un encart « Déposez pour envoyer ».
+
+Côté poste contrôlé, chaque fichier reçu s'annonce dans la bande de notification en version neutre (surface, trait, encre) : le rouge reste réservé aux tentatives refusées.
+
 ### Bandeau de session entrante
 Voile rouge, trait rouge clair, encre rouge 600 ; glisse de 8px vers le bas en 280 ms et reste tant que la session dure, avec « Couper la session » à droite.
 

@@ -8,6 +8,7 @@ Windows, macOS et Linux (X11).
 - **Chiffrement de bout en bout** : le relais ne voit ni l'écran, ni les frappes, ni le mot de passe.
 - **Accès sans surveillance** : mot de passe permanent, lancement au démarrage, icône dans la zone de notification.
 - Plusieurs écrans, trois niveaux de qualité d'image, clavier en touches physiques (AZERTY ↔ AZERTY sans surprise).
+- **Envoi de fichiers** vers le poste contrôlé, par glisser-déposer ou depuis la barre d'outils.
 
 ## Architecture
 
@@ -32,6 +33,7 @@ Windows, macOS et Linux (X11).
 3. Le relais relie les deux connexions et recopie les octets, sans les comprendre.
 4. Échange **SPAKE2** à partir du mot de passe (dérivé par **PBKDF2**, salé par l'ID) → clés **ChaCha20-Poly1305**, une par sens.
 5. L'hôte envoie l'écran en **tuiles JPEG** de 128 px : seules les zones modifiées partent. Le visualiseur accuse réception de chaque image, l'hôte n'en a jamais plus de deux d'avance : la cadence s'adapte au débit et la latence ne s'accumule pas.
+6. Les fichiers envoyés par le visualiseur empruntent le même canal chiffré, par morceaux de 64 Ko qui passent après le clavier et la souris.
 
 ## Prérequis
 
@@ -110,13 +112,27 @@ Pour joindre vos propres machines sans personne devant :
 
 Le mot de passe temporaire (affiché dans la fenêtre, renouvelé à chaque lancement) reste valable en parallèle.
 
+## Envoyer des fichiers
+
+Pendant une session, déposez des fichiers dans la fenêtre de contrôle, ou cliquez sur **Envoyer un fichier** dans la barre d'outils. Ils partent un par un, chiffrés comme le reste de la session, et arrivent dans le dossier **Téléchargements** du poste contrôlé.
+
+- Un fichier du même nom n'est jamais remplacé : le nouveau est enregistré sous `nom (1).ext`.
+- Un envoi annulé ou interrompu ne laisse rien sur le poste contrôlé : le fichier n'y prend son nom qu'une fois complet.
+- La souris et le clavier restent prioritaires sur l'envoi : le poste distant reste utilisable pendant un gros transfert.
+- Le poste contrôlé affiche le nom de chaque fichier reçu dans sa fenêtre principale.
+- Les dossiers ne sont pas envoyés tels quels : compressez-les d'abord.
+
 ## Construire les installateurs
 
 ```bash
 npm run build
 ```
 
-Les installateurs sont dans `target/release/bundle/` (`.msi`/`.exe` sous Windows, `.dmg`/`.app` sous macOS, `.deb`/`.AppImage` sous Linux). Tauri ne compile pas d'un système à l'autre : construisez chaque version sur son système, ou via une CI (GitHub Actions avec `tauri-apps/tauri-action`).
+Les installateurs sont dans `target/release/bundle/` (`.msi`/`.exe` sous Windows, `.dmg`/`.app` sous macOS, `.deb`/`.AppImage` sous Linux). Tauri ne compile pas d'un système à l'autre : construisez chaque version sur son système, ou via la CI.
+
+Le workflow GitHub Actions `.github/workflows/build.yml` construit l'installateur Windows et un `.dmg` macOS universel (Apple Silicon et Intel). Il se lance à la main depuis l'onglet **Actions** (« Installateurs » → *Run workflow*) ou en poussant une étiquette `v*` ; les installateurs sont à télécharger dans les *Artifacts* de l'exécution.
+
+Ces installateurs ne sont pas signés par un certificat. Sous macOS, l'application téléchargée est donc bloquée au premier lancement : après l'avoir copiée dans *Applications*, levez la quarantaine avec `xattr -dr com.apple.quarantine /Applications/Distant.app`. Sous Windows, SmartScreen demande une confirmation (« Informations complémentaires » → « Exécuter quand même »).
 
 ## Sécurité
 
@@ -133,15 +149,22 @@ Fichier de réglages : `%APPDATA%\app.distant.desktop\config.json` (Windows), `~
 - **macOS** : autorisez Distant dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). L'invite apparaît au premier contrôle.
 - **Windows** : l'écran de verrouillage, l'invite UAC et `Ctrl+Alt+Suppr` ne sont pas accessibles (il faudrait un service Windows). Une fenêtre lancée en administrateur ne peut pas être contrôlée si Distant ne l'est pas lui-même.
 - **Linux** : X11 uniquement pour l'injection clavier/souris. Sous Wayland, la capture passe par le portail du bureau quand il est disponible.
-- Pas encore de presse-papiers partagé, de transfert de fichiers ni de son.
+- Pas encore de presse-papiers partagé ni de son. Les fichiers ne vont que du poste qui contrôle vers le poste contrôlé, pas dans l'autre sens.
 - Le clavier est transmis en touches physiques : si les deux postes n'ont pas la même disposition (AZERTY/QWERTY), les caractères suivent la disposition du poste contrôlé. `Cmd` et `Ctrl` sont échangés automatiquement entre un Mac et un PC.
 
 ## Développement
 
 ```bash
-cargo test --workspace     # tests unitaires (protocole, chiffrement, tuiles, réglages)
+cargo test --workspace     # tests unitaires (protocole, chiffrement, tuiles, réglages, fichiers)
 cargo clippy --workspace   # lint
 RUST_LOG=distant=debug npm run dev
+```
+
+Le client de test `probe` se connecte à un hôte sans interface, pour vérifier la réception des images ou envoyer un fichier :
+
+```bash
+cargo run -p distant-proto --example probe -- 127.0.0.1:21116 555123456 mot-de-passe
+cargo run -p distant-proto --example probe -- 127.0.0.1:21116 555123456 mot-de-passe --send fichier.zip
 ```
 
 ## Licence

@@ -37,6 +37,11 @@
         <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9"/></svg>
         <span>Plein écran</span>
       </button>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <button id="send-file" class="tb-button" type="button" title="Envoyer des fichiers au poste distant (ou les déposer dans cette fenêtre)">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10.5v-8M4.8 5.7L8 2.5l3.2 3.2M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>
+        <span>Envoyer un fichier</span>
+      </button>
     </div>
 
     <div class="tb-end">
@@ -61,6 +66,34 @@
       <button id="overlay-close" class="btn primary" type="button" hidden>Fermer la fenêtre</button>
     </div>
   </div>
+
+  <aside id="transfers" class="transfers" aria-label="Envoi de fichiers" hidden>
+    <h2>Envoi vers <span id="transfers-host">le poste distant</span></h2>
+    <ul id="transfer-list" class="transfer-list"></ul>
+  </aside>
+
+  <div class="drop-hint" aria-hidden="true">
+    <div class="drop-box">
+      <svg class="icon" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7L8 2.5l3.2 3.2M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>
+      <strong>Déposez pour envoyer</strong>
+      <span>Les fichiers arrivent dans le dossier Téléchargements du poste distant.</span>
+    </div>
+  </div>
+
+  <template id="transfer-template">
+    <li class="transfer">
+      <svg class="icon transfer-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 1.5h-5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-9z"/><path d="M9.5 1.5v3h3"/></svg>
+      <svg class="icon transfer-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>
+      <div class="transfer-text">
+        <div class="transfer-name"></div>
+        <div class="transfer-meta num"></div>
+      </div>
+      <button class="icon-btn transfer-dismiss" type="button">
+        <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+      </button>
+      <div class="transfer-bar" aria-hidden="true"><span></span></div>
+    </li>
+  </template>
 
   <script src="viewer.js"></script>
 </body>

@@ -1,9 +1,11 @@
 //! Client de test : se connecte à un hôte Distant via le relais, reçoit des
 //! images pendant quelques secondes et affiche des statistiques.
-//! N'envoie aucun événement clavier/souris.
+//! N'envoie aucun événement clavier/souris. Avec `--send`, envoie un fichier
+//! à l'hôte (il arrive dans son dossier Téléchargements) au lieu de recevoir des images.
 //!
 //! ```text
 //! cargo run -p distant-proto --example probe -- 127.0.0.1:21116 555123456 mot-de-passe [secondes]
+//! cargo run -p distant-proto --example probe -- 127.0.0.1:21116 555123456 mot-de-passe --send fichier
 //! cargo run -p distant-proto --example probe -- --secret 555123456 mot-de-passe
 //! ```
 
@@ -14,14 +16,26 @@ use distant_proto::{
     frame::{read_frame, read_json, write_frame, write_json},
     relay::{ClientMsg, RelayMsg},
     secure::{derive_secret, handshake, Role},
-    session::{decode, frame_seq, Control, Incoming, AUTH_FAILED, AUTH_RETRY, STATUS_OK},
+    session::{
+        decode, encode_file_chunk, frame_seq, Control, Incoming, AUTH_FAILED, AUTH_RETRY,
+        FILE_CHUNK_LEN, STATUS_OK,
+    },
     PROTOCOL_VERSION,
 };
 use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let send_path = match args.iter().position(|a| a == "--send") {
+        Some(i) if i + 1 < args.len() => {
+            let path = args.remove(i + 1);
+            args.remove(i);
+            Some(path)
+        }
+        Some(_) => bail!("--send attend un chemin de fichier"),
+        None => None,
+    };
     if args.first().map(String::as_str) == Some("--secret") {
         let secret = derive_secret(&args[2], &args[1]);
         println!("{}", secret.iter().map(|b| format!("{b:02x}")).collect::<String>());
@@ -74,6 +88,45 @@ async fn main() -> anyhow::Result<()> {
     let primary = monitors.iter().position(|m| m.primary).unwrap_or(0);
 
     let send = |sealer: &mut distant_proto::secure::Sealer, c: Control| sealer.seal(&c.encode());
+
+    if let Some(path) = send_path {
+        let content = std::fs::read(&path).with_context(|| format!("lecture de {path}"))?;
+        let name = std::path::Path::new(&path)
+            .file_name()
+            .context("nom de fichier")?
+            .to_string_lossy()
+            .into_owned();
+        let started = Instant::now();
+        let start = Control::FileStart { id: 1, name, size: content.len() as u64 };
+        write_frame(&mut sock, &send(&mut sealer, start)).await?;
+        for chunk in content.chunks(FILE_CHUNK_LEN) {
+            write_frame(&mut sock, &sealer.seal(&encode_file_chunk(1, chunk))).await?;
+        }
+        write_frame(&mut sock, &send(&mut sealer, Control::FileEnd { id: 1 })).await?;
+        // L'hôte confirme une fois le fichier enregistré.
+        loop {
+            let ct = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut sock))
+                .await
+                .context("pas de confirmation de l'hôte")??;
+            match decode(&opener.open(&ct)?)? {
+                Incoming::Control(Control::FileDone { name, .. }) => {
+                    println!(
+                        "fichier : {} octets envoyés en {} ms, enregistré sous « {name} »",
+                        content.len(),
+                        started.elapsed().as_millis()
+                    );
+                    break;
+                }
+                Incoming::Control(Control::FileError { message, .. }) => {
+                    println!("fichier : REFUSÉ — {message}");
+                    break;
+                }
+                _ => {}
+            }
+        }
+        write_frame(&mut sock, &send(&mut sealer, Control::Bye)).await?;
+        return Ok(());
+    }
     write_frame(&mut sock, &send(&mut sealer, Control::Start { monitor: primary, quality: 2 })).await?;
 
     let started = Instant::now();

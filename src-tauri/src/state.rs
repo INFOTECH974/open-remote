@@ -152,12 +152,21 @@ pub fn emit_incoming(app: &AppHandle, info: IncomingInfo) {
     let _ = app.emit("incoming-session", info);
 }
 
+#[derive(Serialize, Clone)]
+struct Notice {
+    /// `alert` (tentative refusée) ou `info` (fichier reçu).
+    kind: &'static str,
+    message: String,
+}
+
+/// Alerte à lire : reste affichée dans la fenêtre principale.
 pub fn emit_notice(app: &AppHandle, message: impl Into<String>) {
-    #[derive(Serialize, Clone)]
-    struct Notice {
-        message: String,
-    }
-    let _ = app.emit("host-notice", Notice { message: message.into() });
+    let _ = app.emit("host-notice", Notice { kind: "alert", message: message.into() });
+}
+
+/// Simple information (fichier reçu), sans caractère d'alerte.
+pub fn emit_info(app: &AppHandle, message: impl Into<String>) {
+    let _ = app.emit("host-notice", Notice { kind: "info", message: message.into() });
 }
 
 #[cfg(test)]

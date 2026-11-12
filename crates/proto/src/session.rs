@@ -2,12 +2,18 @@
 //!
 //! Chaque message déchiffré commence par un octet de type :
 //! - [`TAG_CONTROL`] : un [`Control`] encodé en JSON ;
-//! - [`TAG_FRAME`] : une image (voir [`encode_frame`]), en binaire.
+//! - [`TAG_FRAME`] : une image (voir [`encode_frame`]), en binaire ;
+//! - [`TAG_FILE`] : un morceau de fichier (voir [`encode_file_chunk`]), en binaire.
 
 use serde::{Deserialize, Serialize};
 
 pub const TAG_CONTROL: u8 = 0;
 pub const TAG_FRAME: u8 = 1;
+pub const TAG_FILE: u8 = 2;
+
+/// Taille d'un morceau de fichier. Assez petit pour qu'un clic ou une frappe
+/// n'attende jamais longtemps derrière un morceau en cours d'envoi.
+pub const FILE_CHUNK_LEN: usize = 64 * 1024;
 
 /// Statut envoyé en clair par l'hôte juste après la mise en relation.
 pub const STATUS_OK: &[u8] = b"OK";
@@ -41,6 +47,17 @@ pub enum Control {
     /// Le visualiseur a affiché l'image `seq` (contrôle de flux).
     FrameAck { seq: u32 },
     Input { event: InputEvent },
+    /// Début d'un envoi de fichier : les données suivent en messages
+    /// [`TAG_FILE`] portant le même `id`, puis `FileEnd`.
+    FileStart { id: u32, name: String, size: u64 },
+    /// Toutes les données du fichier `id` ont été envoyées.
+    FileEnd { id: u32 },
+    /// L'expéditeur abandonne le fichier `id`.
+    FileCancel { id: u32 },
+    /// Destinataire → expéditeur : fichier enregistré sous le nom `name`.
+    FileDone { id: u32, name: String },
+    /// Destinataire → expéditeur : fichier refusé ou enregistrement impossible.
+    FileError { id: u32, message: String },
     /// Maintien de la connexion, ignoré à la réception.
     Ping,
     /// Fin de session demandée.
@@ -95,14 +112,29 @@ pub enum Incoming<'a> {
     Control(Control),
     /// Contenu binaire de l'image, sans l'octet de type.
     Frame(&'a [u8]),
+    /// Morceau du fichier `id`.
+    File { id: u32, data: &'a [u8] },
 }
 
 pub fn decode(payload: &[u8]) -> anyhow::Result<Incoming<'_>> {
     match payload.split_first() {
         Some((&TAG_CONTROL, rest)) => Ok(Incoming::Control(serde_json::from_slice(rest)?)),
         Some((&TAG_FRAME, rest)) => Ok(Incoming::Frame(rest)),
+        Some((&TAG_FILE, rest)) => match rest.split_first_chunk::<4>() {
+            Some((id, data)) => Ok(Incoming::File { id: u32::from_be_bytes(*id), data }),
+            None => anyhow::bail!("morceau de fichier tronqué"),
+        },
         _ => anyhow::bail!("message de session inconnu"),
     }
+}
+
+/// Encode un morceau de fichier (avec l'octet [`TAG_FILE`]) : `id u32`, puis les données.
+pub fn encode_file_chunk(id: u32, data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(5 + data.len());
+    out.push(TAG_FILE);
+    out.extend_from_slice(&id.to_be_bytes());
+    out.extend_from_slice(data);
+    out
 }
 
 /// Une tuile d'image encodée en JPEG, positionnée dans l'écran.
@@ -155,8 +187,25 @@ mod tests {
         let bytes = msg.encode();
         match decode(&bytes).unwrap() {
             Incoming::Control(c) => assert_eq!(c, msg),
-            Incoming::Frame(_) => panic!("type inattendu"),
+            _ => panic!("type inattendu"),
         }
+    }
+
+    #[test]
+    fn file_chunk_roundtrip() {
+        let bytes = encode_file_chunk(7, b"abc");
+        let Incoming::File { id, data } = decode(&bytes).unwrap() else { panic!() };
+        assert_eq!((id, data), (7, &b"abc"[..]));
+        // Un morceau vide est valide, un en-tête incomplet ne l'est pas.
+        assert!(matches!(decode(&encode_file_chunk(7, b"")), Ok(Incoming::File { id: 7, data: [] })));
+        assert!(decode(&[TAG_FILE, 0, 0]).is_err());
+    }
+
+    #[test]
+    fn file_control_json() {
+        let msg = Control::FileStart { id: 1, name: "rapport.pdf".into(), size: 5_000_000_000 };
+        let json = String::from_utf8(msg.encode()[1..].to_vec()).unwrap();
+        assert_eq!(json, r#"{"t":"file_start","id":1,"name":"rapport.pdf","size":5000000000}"#);
     }
 
     #[test]
