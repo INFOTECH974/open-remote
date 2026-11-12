@@ -347,6 +347,35 @@ body.connecting .progress {
 .notice:not(.info) .notice-info {
   display: none;
 }
+/* Mise à jour disponible : la seule action de cette bande est en bleu texte. */
+.notice.update .link {
+  color: var(--accent-text);
+}
+
+/* Réglages : un groupe par sujet, séparés par un trait. */
+.dialog-section {
+  display: grid;
+  gap: 12px;
+}
+.dialog-section + .dialog-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.dialog h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.dialog-section .hint {
+  margin-top: -8px;
+}
+.version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
 .notice .link {
   color: inherit;
   font-weight: 600;

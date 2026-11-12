@@ -27,6 +27,11 @@ pub struct Config {
     /// Accès sans surveillance : secret dérivé du mot de passe permanent (hex).
     /// Le mot de passe lui-même n'est jamais enregistré.
     pub unattended_secret: Option<String>,
+    /// Installer les mises à jour sans rien demander, dès que le poste est libre.
+    pub auto_update: bool,
+    /// Posé juste avant une mise à jour installée fenêtre fermée : le
+    /// lancement suivant reste réduit dans la zone de notification.
+    pub start_hidden_once: bool,
     /// Postes déjà contactés, du plus récent au plus ancien.
     pub machines: Vec<Machine>,
 }
@@ -53,6 +58,11 @@ impl Default for Config {
             accept_incoming: true,
             quality: QUALITY_BALANCED,
             unattended_secret: None,
+            // Sous macOS, une application sans certificat perd ses autorisations
+            // (enregistrement de l'écran, accessibilité) à chaque nouvelle version :
+            // un Mac sans surveillance ne doit pas se mettre à jour tout seul.
+            auto_update: !cfg!(target_os = "macos"),
+            start_hidden_once: false,
             machines: Vec::new(),
         }
     }

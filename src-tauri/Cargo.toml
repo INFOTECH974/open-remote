@@ -21,6 +21,7 @@ tracing-subscriber.workspace = true
 tauri = { version = "2.12", features = ["tray-icon"] }
 tauri-plugin-autostart = "2.7"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
 xcap = "0.9"
 jpeg-encoder = { version = "0.7", features = ["simd"] }

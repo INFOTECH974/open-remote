@@ -18,9 +18,9 @@
     <span class="divider" aria-hidden="true"></span>
     <span id="hostname" class="hostname"></span>
     <span class="spacer"></span>
-    <button id="open-settings" class="icon-btn" type="button" title="Réglages du relais">
+    <button id="open-settings" class="icon-btn" type="button" title="Réglages">
       <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/></svg>
-      <span class="sr-only">Réglages du relais</span>
+      <span class="sr-only">Réglages</span>
     </button>
   </header>
 
@@ -133,6 +133,12 @@
     <button id="notice-dismiss" class="link" type="button">OK</button>
   </div>
 
+  <div id="update" class="notice info update" role="status" hidden>
+    <svg class="icon notice-info" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+    <span id="update-text"></span>
+    <button id="update-install" class="link" type="button">Installer et redémarrer</button>
+  </div>
+
   <footer class="statusbar">
     <span id="relay-lamp" class="lamp" data-state="connecting" aria-hidden="true"></span>
     <span id="relay-state" class="sr-only">Connexion</span>
@@ -184,16 +190,32 @@
 
   <dialog id="settings-dialog" class="dialog">
     <form id="settings-form" method="dialog">
-      <h2>Serveur relais</h2>
-      <p class="hint">Il met les postes en relation et ne voit que des données chiffrées.</p>
-      <label class="field">
-        <span class="label">Adresse (hôte ou hôte:port)</span>
-        <input id="relay" required spellcheck="false" placeholder="relais.exemple.fr:21116">
-      </label>
-      <label class="field">
-        <span class="label">Clé du relais (facultatif)</span>
-        <input id="relay-key" type="password" spellcheck="false">
-      </label>
+      <h2>Réglages</h2>
+      <section class="dialog-section" aria-labelledby="settings-relay">
+        <h3 id="settings-relay">Serveur relais</h3>
+        <p class="hint">Il met les postes en relation et ne voit que des données chiffrées.</p>
+        <label class="field">
+          <span class="label">Adresse (hôte ou hôte:port)</span>
+          <input id="relay" required spellcheck="false" placeholder="relais.exemple.fr:21116">
+        </label>
+        <label class="field">
+          <span class="label">Clé du relais (facultatif)</span>
+          <input id="relay-key" type="password" spellcheck="false">
+        </label>
+      </section>
+      <section class="dialog-section" aria-labelledby="settings-update">
+        <h3 id="settings-update">Mises à jour</h3>
+        <label class="switch">
+          <input id="auto-update" type="checkbox" role="switch">
+          <span class="track" aria-hidden="true"></span>
+          <span>Installer automatiquement les mises à jour</span>
+        </label>
+        <p id="auto-update-hint" class="hint">Installées dès que ce poste n'est plus en session.</p>
+        <div class="version-row">
+          <span id="about-version" class="num" role="status"></span>
+          <button id="check-update" class="link" type="button">Rechercher une mise à jour</button>
+        </div>
+      </section>
       <p id="settings-error" class="form-message" role="alert"></p>
       <div class="dialog-actions">
         <button id="settings-cancel" class="btn" type="button">Annuler</button>

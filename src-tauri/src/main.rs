@@ -7,6 +7,7 @@ mod files;
 mod host;
 mod net;
 mod state;
+mod update;
 mod viewer;
 
 use tauri::{
@@ -91,22 +92,36 @@ fn main() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let file = match &profile {
                 Some(p) => format!("config-{p}.json"),
                 None => "config.json".into(),
             };
             let config_path = app.path().app_config_dir()?.join(file);
-            let config = Config::load(&config_path);
-            tracing::info!("ID {} — réglages : {}", config.id, config_path.display());
+            let mut config = Config::load(&config_path);
+            tracing::info!(
+                "Distant {} — ID {} — réglages : {}",
+                env!("CARGO_PKG_VERSION"),
+                config.id,
+                config_path.display()
+            );
+            // Relancé par une mise à jour installée fenêtre fermée : on reste réduit, une fois.
+            let resumed_hidden = std::mem::take(&mut config.start_hidden_once);
+            if resumed_hidden {
+                if let Err(e) = config.save(&config_path) {
+                    tracing::warn!("impossible d'enregistrer les réglages : {e:#}");
+                }
+            }
 
             app.manage(AppState::new(config_path, config));
             host::spawn_service(app.handle().clone());
+            update::spawn_service(app.handle().clone());
             build_tray(app)?;
 
             // La fenêtre est créée masquée (tauri.conf.json) pour ne pas clignoter
             // quand l'application démarre réduite.
-            if !std::env::args().any(|a| a == "--minimized") {
+            if !resumed_hidden && !std::env::args().any(|a| a == "--minimized") {
                 show_main(app.handle());
             }
             Ok(())
@@ -145,6 +160,9 @@ fn main() {
             commands::viewer_send_files,
             commands::viewer_cancel_file,
             commands::viewer_disconnect,
+            update::update_check,
+            update::update_install,
+            update::set_auto_update,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Distant");

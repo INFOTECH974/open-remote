@@ -226,6 +226,9 @@ Liste flottante en bas à droite de l'écran distant (surface, coins 12px, ombre
 
 Côté poste contrôlé, chaque fichier reçu s'annonce dans la bande de notification en version neutre (surface, trait, encre) : le rouge reste réservé aux tentatives refusées.
 
+### Mise à jour disponible
+Bande neutre au-dessus de la barre d'état (surface, trait, encre), même gabarit que la bande de notification : « Distant 0.2.1 est disponible. Vous avez la version 0.2.0. » et une action en bleu texte, « Installer et redémarrer ». Le texte suit l'avancement (téléchargement avec pourcentage, attente de la fin des sessions, installation) ; une erreur s'affiche à la place, avec « Réessayer ». Le dialogue Réglages regroupe « Serveur relais » et « Mises à jour » en deux blocs séparés par un trait.
+
 ### Bandeau de session entrante
 Voile rouge, trait rouge clair, encre rouge 600 ; glisse de 8px vers le bas en 280 ms et reste tant que la session dure, avec « Couper la session » à droite.
 

@@ -12,11 +12,12 @@ use std::{
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{new_password, Config},
+    update::UpdateStatus,
     viewer::ViewerSession,
 };
 
@@ -37,6 +38,13 @@ pub struct AppState {
     /// Sessions sortantes (ce poste contrôle d'autres postes), par numéro.
     pub viewers: Mutex<HashMap<u32, Arc<ViewerSession>>>,
     pub next_sid: AtomicU32,
+    /// Mise à jour de l'application : ce que la fenêtre affiche.
+    pub update: Mutex<UpdateStatus>,
+    /// Vrai pendant un téléchargement ou une installation : un seul à la fois.
+    pub update_busy: AtomicBool,
+    /// L'utilisateur demande d'installer sans attendre la fin des sessions.
+    pub update_force: AtomicBool,
+    pub update_now: Notify,
 }
 
 impl AppState {
@@ -52,6 +60,10 @@ impl AppState {
             lockout: Mutex::new(Lockout::default()),
             viewers: Mutex::new(HashMap::new()),
             next_sid: AtomicU32::new(1),
+            update: Mutex::new(UpdateStatus::default()),
+            update_busy: AtomicBool::new(false),
+            update_force: AtomicBool::new(false),
+            update_now: Notify::new(),
         }
     }
 

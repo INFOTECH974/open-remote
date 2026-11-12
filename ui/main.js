@@ -5,6 +5,7 @@ const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 const OS_LABELS = { windows: "Windows", macos: "macOS", linux: "Linux" };
 const STATUS_LABELS = { online: "En ligne", connecting: "Connexion", error: "Hors ligne", disabled: "Désactivé" };
+const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
 
 let overview = null;
 
@@ -29,6 +30,7 @@ function render() {
   renderStatus(o.status);
   renderMachines(o.machines);
   renderIncoming(o.incoming);
+  renderUpdate(o.update);
 }
 
 const groupPassword = (pw) => pw.replace(/(.{4})(?=.)/g, "$1 ");
@@ -97,6 +99,40 @@ function pushNotice(message, kind) {
 $("notice-dismiss").addEventListener("click", () => {
   $("notice").hidden = true;
   document.body.classList.remove("has-notice");
+});
+
+// ── Mise à jour de l'application ────────────────────────────────────────
+// Le bandeau reste tant qu'une version plus récente est disponible.
+
+function renderUpdate(update) {
+  const available = update && update.available;
+  $("update").hidden = !available;
+  if (!available) return;
+  const name = `Distant ${update.available}`;
+  const button = $("update-install");
+  button.hidden = false;
+  button.textContent = "Installer et redémarrer";
+  let text = `${name} est disponible. Vous avez la version ${overview.version}.`;
+  if (update.phase === "downloading") {
+    const percent = update.percent == null ? "" : ` ${update.percent} %`;
+    text = `Téléchargement de ${name}…${percent}`;
+    button.hidden = true;
+  } else if (update.phase === "installing") {
+    text = `Installation de ${name} : Distant va redémarrer.`;
+    button.hidden = true;
+  } else if (update.phase === "waiting") {
+    text = `${name} s'installera dès que ce poste ne sera plus en session.`;
+    button.textContent = "Installer maintenant";
+  } else if (update.error) {
+    text = update.error;
+    button.textContent = "Réessayer";
+  }
+  $("update-text").textContent = text;
+}
+
+$("update-install").addEventListener("click", () => {
+  // L'avancement et les erreurs arrivent par l'événement « update-status ».
+  invoke("update_install").catch(() => {});
 });
 
 // ── Ce poste ────────────────────────────────────────────────────────────
@@ -180,19 +216,45 @@ $("unattended-form").addEventListener("submit", async (e) => {
 });
 $("unattended-cancel").addEventListener("click", () => unattendedDialog.close());
 
-// Réglages du relais.
+// Réglages : relais et mises à jour.
 const settingsDialog = $("settings-dialog");
 $("open-settings").addEventListener("click", () => {
   $("relay").value = overview.relay;
   $("relay-key").value = overview.relayKey;
+  $("auto-update").checked = overview.autoUpdate;
+  $("about-version").textContent = `Distant ${overview.version}`;
   $("settings-error").textContent = "";
   settingsDialog.showModal();
   $("relay").focus();
 });
+
+if (isMac) {
+  // Sans certificat Apple, macOS redemande ses autorisations à chaque version.
+  $("auto-update-hint").textContent +=
+    " Sous macOS, il faut alors autoriser de nouveau l'enregistrement de l'écran et l'accessibilité.";
+}
+
+$("check-update").addEventListener("click", async () => {
+  // Le résultat prend la place du numéro de version, sur la même ligne.
+  const result = $("about-version");
+  result.textContent = "Recherche…";
+  try {
+    const update = await invoke("update_check");
+    overview.update = update;
+    renderUpdate(update);
+    result.textContent = update.available
+      ? `Distant ${update.available} est disponible.`
+      : `Distant ${overview.version} est à jour.`;
+  } catch (err) {
+    result.textContent = String(err);
+  }
+});
+
 $("settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
     await invoke("save_settings", { relay: $("relay").value, relayKey: $("relay-key").value });
+    await invoke("set_auto_update", { enabled: $("auto-update").checked });
     settingsDialog.close();
     await refresh();
   } catch (err) {
@@ -276,6 +338,11 @@ async function forget(machine) {
 listen("host-status", () => refresh());
 listen("incoming-session", (e) => renderIncoming(e.payload));
 listen("host-notice", (e) => pushNotice(e.payload.message, e.payload.kind));
+listen("update-status", (e) => {
+  if (!overview) return;
+  overview.update = e.payload;
+  renderUpdate(e.payload);
+});
 
 // Les « il y a 5 min » vieillissent avec la fenêtre.
 setInterval(() => overview && renderMachines(overview.machines), 60_000);

@@ -15,6 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::{
     config::{new_password, to_hex},
     state::{AppState, HostStatus, IncomingInfo},
+    update::UpdateStatus,
     viewer::{self, Credential, QueuedFile, SessionInfo, ViewerEvent},
 };
 
@@ -32,6 +33,8 @@ pub struct Overview {
     relay_key: String,
     unattended: bool,
     autostart: bool,
+    auto_update: bool,
+    update: UpdateStatus,
     machines: Vec<MachineView>,
     incoming: Option<IncomingInfo>,
     version: &'static str,
@@ -67,6 +70,8 @@ pub fn get_overview(app: AppHandle, state: State<'_, AppState>) -> Overview {
         relay_key: config.relay_key,
         unattended: config.unattended_secret.is_some(),
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
+        auto_update: config.auto_update,
+        update: state.update.lock().unwrap().clone(),
         machines: config
             .machines
             .iter()

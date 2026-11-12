@@ -9,6 +9,7 @@ Windows, macOS et Linux (X11).
 - **Accès sans surveillance** : mot de passe permanent, lancement au démarrage, icône dans la zone de notification.
 - Plusieurs écrans, trois niveaux de qualité d'image, clavier en touches physiques (AZERTY ↔ AZERTY sans surprise).
 - **Envoi de fichiers** vers le poste contrôlé, par glisser-déposer ou depuis la barre d'outils.
+- **Mises à jour automatiques** : un poste sans surveillance reçoit les correctifs sans personne devant.
 
 ## Architecture
 
@@ -122,17 +123,46 @@ Pendant une session, déposez des fichiers dans la fenêtre de contrôle, ou cli
 - Le poste contrôlé affiche le nom de chaque fichier reçu dans sa fenêtre principale.
 - Les dossiers ne sont pas envoyés tels quels : compressez-les d'abord.
 
+## Mises à jour
+
+Une copie installée regarde la dernière version publiée sur GitHub (30 s après son lancement, puis toutes les 6 h), la télécharge, vérifie sa signature et l'installe.
+
+- **Installation automatique** (réglages → *Mises à jour*, activée par défaut sous Windows et Linux) : la nouvelle version est téléchargée en arrière-plan, puis installée dès que le poste n'est plus en session, dans un sens comme dans l'autre. Distant redémarre seul et revient comme il était : réduit dans la zone de notification si sa fenêtre était fermée. Un poste sans surveillance reçoit donc un correctif sans personne devant, et redevient joignable quelques secondes plus tard.
+- **À la main** : dès qu'une version est disponible, la fenêtre principale l'annonce avec **Installer et redémarrer**. *Réglages → Rechercher une mise à jour* force une recherche.
+- **macOS** : l'installation automatique y est coupée par défaut. L'application n'étant pas signée par un certificat Apple, macOS redemande l'*Enregistrement de l'écran* et l'*Accessibilité* après chaque nouvelle version : un Mac mis à jour sans personne devant ne pourrait plus être contrôlé tant que quelqu'un ne les a pas accordées de nouveau.
+- Une mise à jour ne s'applique qu'aux copies installées par un installateur (`.exe`, `.msi`, `.dmg`, `.AppImage`), pas à un binaire lancé depuis `target/`.
+
 ## Construire les installateurs
 
 ```bash
 npm run build
 ```
 
-Les installateurs sont dans `target/release/bundle/` (`.msi`/`.exe` sous Windows, `.dmg`/`.app` sous macOS, `.deb`/`.AppImage` sous Linux). Tauri ne compile pas d'un système à l'autre : construisez chaque version sur son système, ou via la CI.
+Les installateurs sont dans `target/release/bundle/` (`.msi`/`.exe` sous Windows, `.dmg`/`.app` sous macOS, `.deb`/`.AppImage` sous Linux). Tauri ne compile pas d'un système à l'autre : construisez chaque version sur son système, ou publiez une version (ci-dessous).
 
-Le workflow GitHub Actions `.github/workflows/build.yml` construit l'installateur Windows et un `.dmg` macOS universel (Apple Silicon et Intel). Il se lance à la main depuis l'onglet **Actions** (« Installateurs » → *Run workflow*) ou en poussant une étiquette `v*` ; les installateurs sont à télécharger dans les *Artifacts* de l'exécution.
+Le build signe aussi les installateurs pour la mise à jour : il lui faut la clé privée, sinon il échoue.
+
+```bash
+TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/distant.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npm run build
+```
 
 Ces installateurs ne sont pas signés par un certificat. Sous macOS, l'application téléchargée est donc bloquée au premier lancement : après l'avoir copiée dans *Applications*, levez la quarantaine avec `xattr -dr com.apple.quarantine /Applications/Distant.app`. Sous Windows, SmartScreen demande une confirmation (« Informations complémentaires » → « Exécuter quand même »).
+
+## Publier une version
+
+1. Monter la version aux trois endroits : `src-tauri/tauri.conf.json` (celle que comparent les copies installées), `Cargo.toml` (`[workspace.package]`) et `package.json`.
+2. Commiter, puis pousser une étiquette du même numéro :
+
+```bash
+git tag v0.2.1 && git push origin main v0.2.1
+```
+
+3. Le workflow `.github/workflows/release.yml` refuse une étiquette qui diffère de la version, crée une release GitHub en **brouillon**, y envoie les installateurs Windows et macOS (Apple Silicon et Intel) signés, puis écrit `latest.json` à partir de leurs signatures.
+4. Essayer les installateurs du brouillon, puis le publier. **Les postes installés ne voient la mise à jour qu'à ce moment-là.**
+
+La clé de signature (minisign, sans mot de passe) est dans `~/.tauri/distant.key` et dans le secret `TAURI_SIGNING_PRIVATE_KEY` du dépôt ; sa moitié publique est dans `tauri.conf.json`. **La perdre empêche à jamais de mettre à jour les copies déjà installées** : gardez-en une sauvegarde.
+
+Pour essayer la recherche de mise à jour sans rien publier, un build de développement accepte un autre `latest.json` (`DISTANT_UPDATE_ENDPOINT=http://127.0.0.1:8000/latest.json`) et un essai à blanc (`DISTANT_UPDATE_DRY_RUN=1`) qui traite la version publiée comme nouvelle, la télécharge et vérifie sa signature, sans l'installer.
 
 ## Sécurité
 

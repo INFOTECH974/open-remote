@@ -1,0 +1,135 @@
+name: Release
+
+# Pousser une étiquette comme `v0.2.0` construit les installateurs Windows et
+# macOS et les attache à une release GitHub en brouillon, à relire puis à
+# publier à la main.
+#
+# La release porte aussi ce dont les copies installées ont besoin pour se
+# mettre à jour : chaque installateur signé avec `TAURI_SIGNING_PRIVATE_KEY`
+# (secret du dépôt ; sa moitié publique est dans `tauri.conf.json`) et
+# `latest.json`, que l'application lit à l'adresse
+# `releases/latest/download/latest.json`. Cette adresse ne suit que les
+# releases publiées : la mise à jour n'atteint les postes qu'une fois le
+# brouillon publié.
+#
+# Chaque action est épinglée à un commit plutôt qu'à une étiquette : ce
+# workflow détient la clé de signature, et une étiquette peut être déplacée
+# vers un autre code. Le commentaire après chaque commit donne sa version.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: L'étiquette correspond à la version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Une copie installée compare sa version à celle de `latest.json`, toutes
+      # deux tirées de `tauri.conf.json` : une étiquette sans changement de
+      # version ne mettrait personne à jour.
+      - name: L'étiquette est la version de tauri.conf.json et de Cargo.toml
+        run: |
+          tauri="v$(jq -r .version src-tauri/tauri.conf.json)"
+          cargo="v$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          for version in "$tauri" "$cargo"; do
+            if [ "$version" != "$GITHUB_REF_NAME" ]; then
+              echo "::error::L'étiquette est $GITHUB_REF_NAME mais tauri.conf.json dit $tauri et Cargo.toml dit $cargo."
+              exit 1
+            fi
+          done
+
+  draft:
+    name: Brouillon de release
+    needs: version
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+    steps:
+      # Créé ici, une seule fois : les builds démarrent ensemble et, s'ils
+      # cherchaient chacun la release, deux d'entre eux pourraient en créer une.
+      # Une exécution relancée retrouve le brouillon du premier essai.
+      - name: Le brouillon qui reçoit tous les installateurs
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq "[.[] | select(.tag_name == \"$GITHUB_REF_NAME\")][0].id // empty")
+          if [ -z "$id" ]; then
+            # La liste ne montre pas une release créée à l'instant : son
+            # identifiant vient de la création elle-même.
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$GITHUB_REF_NAME" -f name="Distant $GITHUB_REF_NAME" \
+              -f body="Installateurs ci-dessous." -F draft=true \
+              --jq .id)
+          fi
+          if [ -z "$id" ]; then
+            echo "::error::Aucune release n'a pu être créée pour $GITHUB_REF_NAME."
+            exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Installateur (${{ matrix.name }})
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            target: ""
+          - name: macos-arm
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macos-intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # À définir même quand la clé n'a pas de mot de passe, sinon le build en demande un.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.draft.outputs.id }}
+          # Écrit une seule fois par le job `updater` : ces jobs tournent côte à
+          # côte et écraseraient les entrées les uns des autres.
+          includeUpdaterJson: false
+          args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+  updater:
+    name: latest.json
+    # Seulement quand tous les installateurs sont là : une mise à jour à
+    # laquelle il manque une plateforme n'atteindrait jamais ses postes.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Écrire latest.json à partir des signatures de la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/latest-json.mjs "$GITHUB_REF_NAME"
