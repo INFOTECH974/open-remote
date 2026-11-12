@@ -107,9 +107,18 @@ body.viewer {
   flex: 1;
 }
 .tb-stats {
+  border: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font: 12px/1.4 var(--font);
   white-space: nowrap;
+  cursor: pointer;
+}
+.tb-stats:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .btn.small {
   height: 30px;

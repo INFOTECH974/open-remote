@@ -132,7 +132,8 @@ async fn main() -> anyhow::Result<()> {
         write_frame(&mut sock, &send(&mut sealer, Control::Bye)).await?;
         return Ok(());
     }
-    write_frame(&mut sock, &send(&mut sealer, Control::Start { monitor: primary, quality: 2 })).await?;
+    let start = Control::Start { monitor: primary, quality: 2, stats: true };
+    write_frame(&mut sock, &send(&mut sealer, start)).await?;
 
     let started = Instant::now();
     let mut frames = 0u32;
@@ -148,7 +149,14 @@ async fn main() -> anyhow::Result<()> {
             Err(_) => continue, // écran figé : rien à envoyer
         };
         let msg = opener.open(&ct)?;
-        let Incoming::Frame(body) = decode(&msg)? else { continue };
+        let body = match decode(&msg)? {
+            Incoming::Frame(body) => body,
+            Incoming::Control(Control::Stats { frames, capture, encode, wait }) => {
+                println!("  hôte : {frames} i/s, capture {capture} ms, encodage {encode} ms, attente {wait} ms");
+                continue;
+            }
+            _ => continue,
+        };
         let seq = frame_seq(body).context("image tronquée")?;
         let w = u16::from_be_bytes([body[4], body[5]]);
         let h = u16::from_be_bytes([body[6], body[7]]);

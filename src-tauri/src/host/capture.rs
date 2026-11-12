@@ -18,7 +18,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use distant_proto::session::{
-    encode_frame, MonitorInfo, Tile, QUALITY_BALANCED, QUALITY_FAST, QUALITY_HIGH,
+    encode_frame, Control, MonitorInfo, Tile, QUALITY_BALANCED, QUALITY_FAST, QUALITY_HIGH,
 };
 use jpeg_encoder::{ColorType, Encoder, SamplingFactor};
 use rayon::prelude::*;
@@ -49,6 +49,8 @@ pub struct CaptureSettings {
     monitor: AtomicUsize,
     quality: AtomicU8,
     dirty: AtomicBool,
+    /// Le visualiseur a demandé les mesures de l'hôte.
+    stats: AtomicBool,
     geometry: Mutex<Geometry>,
 }
 
@@ -64,6 +66,7 @@ impl CaptureSettings {
             monitor: AtomicUsize::new(primary),
             quality: AtomicU8::new(QUALITY_BALANCED),
             dirty: AtomicBool::new(true),
+            stats: AtomicBool::new(false),
             geometry: Mutex::new(geometry),
         }
     }
@@ -77,6 +80,10 @@ impl CaptureSettings {
         if self.quality.swap(quality, Ordering::Relaxed) != quality {
             self.dirty.store(true, Ordering::Relaxed);
         }
+    }
+
+    pub fn set_stats(&self, enabled: bool) {
+        self.stats.store(enabled, Ordering::Relaxed);
     }
 
     pub fn geometry(&self) -> Geometry {
@@ -159,6 +166,32 @@ fn preset(quality: u8) -> Preset {
     }
 }
 
+/// Où part le temps, cumulé sur une seconde puis envoyé au visualiseur.
+#[derive(Default)]
+struct Timings {
+    /// Images envoyées.
+    frames: u32,
+    /// Captures faites, y compris celles où rien n'avait changé à l'écran.
+    captures: u32,
+    capture: Duration,
+    encode: Duration,
+    wait: Duration,
+}
+
+impl Timings {
+    /// Moyennes en millisecondes : par capture pour la capture, par image
+    /// envoyée pour le reste.
+    fn message(&self) -> Control {
+        let average = |total: Duration, count: u32| (total.as_millis() / count.max(1) as u128).min(u16::MAX as u128) as u16;
+        Control::Stats {
+            frames: self.frames.min(u16::MAX as u32) as u16,
+            capture: average(self.capture, self.captures),
+            encode: average(self.encode, self.frames),
+            wait: average(self.wait, self.frames),
+        }
+    }
+}
+
 fn capture_loop(
     settings: &CaptureSettings,
     out: &mpsc::Sender<Vec<u8>>,
@@ -171,13 +204,27 @@ fn capture_loop(
     let mut current: Option<usize> = None;
     let mut prev: Option<Frame> = None;
     let mut failures: u32 = 0;
+    let mut timings = Timings::default();
+    let mut window = Instant::now();
 
     while !cancel.is_cancelled() {
+        if window.elapsed() >= Duration::from_secs(1) {
+            if settings.stats.load(Ordering::Relaxed) && timings.frames > 0 {
+                // Jamais bloquant : une mesure perdue n'a aucune importance.
+                let _ = out.try_send(timings.message().encode());
+            }
+            timings = Timings::default();
+            window = Instant::now();
+        }
+
         while let Ok(a) = acks.try_recv() {
             acked = acked.max(a);
         }
         if seq.wrapping_sub(acked) >= MAX_IN_FLIGHT {
-            match acks.recv_timeout(Duration::from_millis(250)) {
+            let waiting = Instant::now();
+            let ack = acks.recv_timeout(Duration::from_millis(250));
+            timings.wait += waiting.elapsed();
+            match ack {
                 Ok(a) => acked = acked.max(a),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -198,9 +245,12 @@ fn capture_loop(
         }
         let Some(monitor) = current.and_then(|i| monitors.get(i)) else { continue };
 
+        let capturing = Instant::now();
         let image = match monitor.capture_image() {
             Ok(image) => {
                 failures = 0;
+                timings.capture += capturing.elapsed();
+                timings.captures += 1;
                 image
             }
             Err(e) => {
@@ -217,6 +267,7 @@ fn capture_loop(
             }
         };
 
+        let encoding = Instant::now();
         let preset = preset(settings.quality.load(Ordering::Relaxed));
         let frame = prepare(image, &preset);
         let rects = changed_rects(prev.as_ref(), &frame);
@@ -231,6 +282,8 @@ fn capture_loop(
             .collect::<anyhow::Result<Vec<_>>>()?;
         seq = seq.wrapping_add(1);
         let payload = encode_frame(seq, frame.width as u16, frame.height as u16, &tiles);
+        timings.encode += encoding.elapsed();
+        timings.frames += 1;
         if out.blocking_send(payload).is_err() {
             break; // session terminée
         }

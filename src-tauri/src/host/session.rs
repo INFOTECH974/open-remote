@@ -214,10 +214,11 @@ async fn run_session(
                 Incoming::Frame(_) => continue,
             };
             match control {
-                Control::Start { monitor, quality } => {
+                Control::Start { monitor, quality, stats } => {
                     if let Some(acks) = ack_rx.take() {
                         settings.set_monitor(monitor);
                         settings.set_quality(quality);
+                        settings.set_stats(stats);
                         capture::spawn(settings.clone(), out_tx.clone(), acks, cancel.clone());
                     }
                 }

@@ -145,6 +145,8 @@ pub enum ViewerEvent {
     /// Le poste distant a enregistré le fichier sous le nom `name`.
     FileDone { id: u32, name: String },
     FileError { id: u32, message: String },
+    /// Mesures du poste distant, une fois par seconde (millisecondes par image).
+    HostStats { frames: u16, capture: u16, encode: u16, wait: u16 },
 }
 
 /// Comment s'authentifier auprès du poste distant.
@@ -450,6 +452,9 @@ pub fn attach(
                 Ok(Incoming::Control(Control::Bye)) => {
                     break "Session terminée par le poste distant.".into();
                 }
+                Ok(Incoming::Control(Control::Stats { frames, capture, encode, wait })) => {
+                    events.emit(ViewerEvent::HostStats { frames, capture, encode, wait });
+                }
                 Ok(Incoming::Control(Control::FileDone { id, name })) => {
                     events.emit(ViewerEvent::FileDone { id, name });
                 }
@@ -466,7 +471,7 @@ pub fn attach(
         events.emit(ViewerEvent::Closed { reason });
     });
 
-    session.send(Control::Start { monitor, quality });
+    session.send(Control::Start { monitor, quality, stats: true });
     Ok(SessionInfo {
         host_id: format_id(&session.host_id),
         hostname: session.hostname.clone(),

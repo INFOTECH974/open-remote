@@ -41,6 +41,7 @@ async function pump() {
 async function drawFrame(buffer) {
   const view = new DataView(buffer);
   const seq = view.getUint32(0);
+  const started = performance.now();
   if (closed) return; // session finie : on garde la dernière image figée
   try {
     const width = view.getUint16(4);
@@ -66,7 +67,7 @@ async function drawFrame(buffer) {
       ctx.drawImage(bitmap, x, y);
       bitmap.close();
     }
-    stats.frame(buffer.byteLength);
+    stats.frame(buffer.byteLength, performance.now() - started);
     if (!gotFirstFrame && !closed) {
       gotFirstFrame = true;
       document.body.classList.add("has-frame");
@@ -83,19 +84,40 @@ async function drawFrame(buffer) {
 const stats = {
   frames: 0,
   bytes: 0,
-  frame(size) {
+  drawMs: 0,
+  host: null, // mesures du poste distant, reçues chaque seconde
+  detailed: false,
+  frame(size, drawMs) {
     this.frames += 1;
     this.bytes += size;
+    this.drawMs += drawMs;
   },
 };
 setInterval(() => {
   if (!gotFirstFrame || closed) return;
   const mb = stats.bytes / 1e6;
   const rate = mb >= 1 ? `${mb.toFixed(1).replace(".", ",")} Mo/s` : `${Math.round(stats.bytes / 1e3)} Ko/s`;
-  $("stats").textContent = `${stats.frames} i/s · ${rate}`;
+  let text = `${stats.frames} i/s · ${rate}`;
+  if (stats.detailed) {
+    // Par image, en millisecondes : ce que coûte chaque étape. « réseau »
+    // est l'attente de l'accusé de réception par le poste distant, donc
+    // l'aller-retour moins l'affichage fait ici.
+    const draw = stats.frames ? Math.round(stats.drawMs / stats.frames) : 0;
+    const h = stats.host;
+    text = h
+      ? `${stats.frames} i/s · capture ${h.capture} · encodage ${h.encode} · réseau ${Math.max(0, h.wait - draw)} · affichage ${draw} ms`
+      : `${stats.frames} i/s · affichage ${draw} ms · le poste distant ne donne pas ses mesures`;
+  }
+  $("stats").textContent = text;
   stats.frames = 0;
   stats.bytes = 0;
+  stats.drawMs = 0;
+  stats.host = null;
 }, 1000);
+$("stats").addEventListener("click", () => {
+  stats.detailed = !stats.detailed;
+  canvas.focus();
+});
 
 // ── Mise à l'échelle ────────────────────────────────────────────────────
 
@@ -430,6 +452,10 @@ function hideOverlay() {
 
 const onEvent = new Channel();
 onEvent.onmessage = (event) => {
+  if (event.type === "host_stats") {
+    stats.host = event;
+    return;
+  }
   if (event.type !== "closed") {
     onFileEvent(event);
     return;

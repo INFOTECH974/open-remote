@@ -55,8 +55,14 @@ pub enum Control {
         #[serde(default)]
         permanent: Option<bool>,
     },
-    /// Visualiseur → hôte : démarrer l'envoi des images.
-    Start { monitor: usize, quality: u8 },
+    /// Visualiseur → hôte : démarrer l'envoi des images. Avec `stats`,
+    /// l'hôte envoie aussi ses mesures (`Stats`) ; absent avant la 0.3.2.
+    Start {
+        monitor: usize,
+        quality: u8,
+        #[serde(default)]
+        stats: bool,
+    },
     SetMonitor { index: usize },
     SetQuality { quality: u8 },
     /// Le visualiseur a affiché l'image `seq` (contrôle de flux).
@@ -73,10 +79,18 @@ pub enum Control {
     FileDone { id: u32, name: String },
     /// Destinataire → expéditeur : fichier refusé ou enregistrement impossible.
     FileError { id: u32, message: String },
+    /// Hôte → visualiseur, une fois par seconde si `Start` l'a demandé :
+    /// où part le temps de chaque image, en millisecondes (moyennes sur la
+    /// seconde écoulée). `wait` est l'attente des accusés de réception,
+    /// c'est-à-dire le réseau et l'affichage chez le visualiseur.
+    Stats { frames: u16, capture: u16, encode: u16, wait: u16 },
     /// Maintien de la connexion, ignoré à la réception.
     Ping,
     /// Fin de session demandée.
     Bye,
+    /// Message d'une version plus récente : ignoré, la session continue.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -222,6 +236,15 @@ mod tests {
         let Control::Welcome { warnings, permanent, .. } = serde_json::from_slice(json).unwrap() else { panic!() };
         assert!(warnings.is_empty());
         assert_eq!(permanent, None);
+    }
+
+    #[test]
+    fn messages_from_a_newer_version_are_ignored() {
+        let msg: Control = serde_json::from_slice(br#"{"t":"clipboard","text":"bonjour"}"#).unwrap();
+        assert_eq!(msg, Control::Unknown);
+        // Un champ en plus dans un message connu ne gêne pas non plus.
+        let start: Control = serde_json::from_slice(br#"{"t":"start","monitor":1,"quality":2}"#).unwrap();
+        assert_eq!(start, Control::Start { monitor: 1, quality: 2, stats: false });
     }
 
     #[test]
