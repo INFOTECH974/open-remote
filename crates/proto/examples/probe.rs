@@ -11,6 +11,10 @@
 //! ```
 //!
 //! La clé du relais, s'il en exige une, se donne par `DISTANT_RELAY_KEY`.
+//! `--steady` garde la même qualité d'image tout du long (mesures de fluidité) ;
+//! `--monitor <n>` demande l'écran `n` de l'hôte au lieu de son écran principal ;
+//! `--dump <dossier>` y enregistre chaque image reçue, telle que le visualiseur
+//! la reçoit (`00001.bin`, `00002.bin`…), pour la rejouer dans l'interface.
 //! `--clipboard <texte>` joue le presse-papiers partagé : le texte est envoyé
 //! à l'hôte, puis tout ce que l'hôte copie pendant six secondes est affiché.
 
@@ -23,7 +27,7 @@ use distant_proto::{
     secure::{derive_secret, handshake, Role},
     session::{
         decode, encode_file_chunk, frame_seq, Control, Incoming, AUTH_FAILED, AUTH_RETRY,
-        FEATURE_CLIPBOARD, FILE_CHUNK_LEN, STATUS_OK,
+        FEATURE_CLIPBOARD, FEATURE_SCALED_TILES, FILE_CHUNK_LEN, STATUS_OK,
     },
     transport, PROTOCOL_VERSION,
 };
@@ -38,6 +42,32 @@ async fn main() -> anyhow::Result<()> {
             Some(path)
         }
         Some(_) => bail!("--send attend un chemin de fichier"),
+        None => None,
+    };
+    let steady = match args.iter().position(|a| a == "--steady") {
+        Some(i) => {
+            args.remove(i);
+            true
+        }
+        None => false,
+    };
+    let monitor: Option<usize> = match args.iter().position(|a| a == "--monitor") {
+        Some(i) if i + 1 < args.len() => {
+            let index = args.remove(i + 1).parse().context("--monitor attend un numéro d'écran")?;
+            args.remove(i);
+            Some(index)
+        }
+        Some(_) => bail!("--monitor attend un numéro d'écran"),
+        None => None,
+    };
+    let dump = match args.iter().position(|a| a == "--dump") {
+        Some(i) if i + 1 < args.len() => {
+            let dir = args.remove(i + 1);
+            args.remove(i);
+            std::fs::create_dir_all(&dir).with_context(|| format!("création de {dir}"))?;
+            Some(dir)
+        }
+        Some(_) => bail!("--dump attend un dossier"),
         None => None,
     };
     let clipboard_text = match args.iter().position(|a| a == "--clipboard") {
@@ -72,7 +102,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let secret = derive_secret(password, id);
-    let features = if clipboard_text.is_some() { vec![FEATURE_CLIPBOARD.to_string()] } else { Vec::new() };
+    // Comme le visualiseur, on accepte les tuiles en demi-résolution.
+    let mut features = vec![FEATURE_SCALED_TILES.to_string()];
+    if clipboard_text.is_some() {
+        features.push(FEATURE_CLIPBOARD.to_string());
+    }
     let hello =
         Control::Hello { name: "probe".into(), os: "test".into(), version: PROTOCOL_VERSION, features }.encode();
     let mut session = None;
@@ -105,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
     for (i, m) in monitors.iter().enumerate() {
         println!("  écran {i} : {} {}×{}{}", m.name, m.width, m.height, if m.primary { " (principal)" } else { "" });
     }
-    let primary = monitors.iter().position(|m| m.primary).unwrap_or(0);
+    let primary = monitor.unwrap_or_else(|| monitors.iter().position(|m| m.primary).unwrap_or(0));
 
     let send = |sealer: &mut distant_proto::secure::Sealer, c: Control| sealer.seal(&c.encode());
 
@@ -171,6 +205,7 @@ async fn main() -> anyhow::Result<()> {
 
     let started = Instant::now();
     let mut frames = 0u32;
+    let mut received = 0u32;
     let mut tiles_total = 0u64;
     let mut bytes = 0u64;
     let mut first: Option<(Duration, usize, u16, u16, u16)> = None;
@@ -185,8 +220,14 @@ async fn main() -> anyhow::Result<()> {
         let msg = opener.open(&ct)?;
         let body = match decode(&msg)? {
             Incoming::Frame(body) => body,
-            Incoming::Control(Control::Stats { frames, capture, encode, wait }) => {
-                println!("  hôte : {frames} i/s, capture {capture} ms, encodage {encode} ms, attente {wait} ms");
+            Incoming::Control(Control::Stats { frames, capture, encode, wait, rtt, rate, level, levels }) => {
+                print!("  hôte : {frames} i/s, capture {capture} ms, encodage {encode} ms, attente {wait} ms");
+                if let (Some(level), Some(levels)) = (level, levels) {
+                    let rtt = rtt.map_or("?".into(), |ms| ms.to_string());
+                    let rate = rate.map_or("?".into(), |kb| kb.to_string());
+                    print!(", aller-retour {rtt} ms, liaison {rate} Ko/s, niveau {level} sur {}", levels - 1);
+                }
+                println!();
                 continue;
             }
             _ => continue,
@@ -211,6 +252,15 @@ async fn main() -> anyhow::Result<()> {
             }
             off += len;
         }
+        received += 1;
+        if let Some(dir) = &dump {
+            std::fs::write(format!("{dir}/{received:05}.bin"), body).context("enregistrement de l'image")?;
+        }
+        // Une image sans tuile mesure la latence : elle ne compte pas.
+        write_frame(&mut sock, &send(&mut sealer, Control::FrameAck { seq })).await?;
+        if n == 0 {
+            continue;
+        }
         frames += 1;
         tiles_total += n as u64;
         bytes += body.len() as u64;
@@ -220,10 +270,8 @@ async fn main() -> anyhow::Result<()> {
         if switched && after_switch.is_none() {
             after_switch = Some((n, body.len()));
         }
-        write_frame(&mut sock, &send(&mut sealer, Control::FrameAck { seq })).await?;
-
         // À mi-parcours : passage en qualité haute, qui doit renvoyer une image complète.
-        if !switched && started.elapsed() > Duration::from_secs(seconds / 2) {
+        if !steady && !switched && started.elapsed() > Duration::from_secs(seconds / 2) {
             write_frame(&mut sock, &send(&mut sealer, Control::SetQuality { quality: 3 })).await?;
             switched = true;
         }

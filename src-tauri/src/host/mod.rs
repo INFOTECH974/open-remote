@@ -6,6 +6,7 @@
 
 mod capture;
 mod input;
+mod pacing;
 pub mod permissions;
 mod session;
 

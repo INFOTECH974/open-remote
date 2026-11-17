@@ -22,13 +22,15 @@ let swapCtrlMeta = false;
 
 // ── Images ──────────────────────────────────────────────────────────────
 // Chaque message binaire contient une image : en-tête puis tuiles JPEG.
-// On les dessine dans l'ordre, puis on accuse réception (contrôle de flux).
+// Le décodage commence dès l'arrivée, plusieurs images à la fois si elles se
+// suivent de près ; elles sont dessinées dans l'ordre, puis on accuse
+// réception (c'est sur ces accusés que le poste distant règle sa cadence).
 
 const queue = [];
 let drawing = false;
 const onFrame = new Channel();
 onFrame.onmessage = (buffer) => {
-  queue.push(buffer);
+  queue.push(decodeFrame(buffer));
   if (!drawing) pump();
 };
 
@@ -38,37 +40,65 @@ async function pump() {
   drawing = false;
 }
 
-async function drawFrame(buffer) {
+// Lit l'en-tête et lance le décodage des tuiles, sans rien dessiner.
+function decodeFrame(buffer) {
   const view = new DataView(buffer);
-  const seq = view.getUint32(0);
-  const started = performance.now();
-  if (closed) return; // session finie : on garde la dernière image figée
+  const frame = {
+    seq: view.getUint32(0),
+    width: view.getUint16(4),
+    height: view.getUint16(6),
+    size: buffer.byteLength,
+    arrived: performance.now(),
+    tiles: null,
+  };
+  if (closed) return frame; // session finie : on garde la dernière image figée
   try {
-    const width = view.getUint16(4);
-    const height = view.getUint16(6);
     const count = view.getUint16(8);
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-      layout();
-    }
     let offset = 10;
     const jobs = [];
     for (let i = 0; i < count; i++) {
+      // Place de la tuile à l'écran ; le JPEG peut être plus petit (zone
+      // envoyée en demi-résolution quand la liaison ne suit pas).
       const x = view.getUint16(offset);
       const y = view.getUint16(offset + 2);
+      const w = view.getUint16(offset + 4);
+      const h = view.getUint16(offset + 6);
       const length = view.getUint32(offset + 8);
       offset += 12;
       const blob = new Blob([new Uint8Array(buffer, offset, length)], { type: "image/jpeg" });
       offset += length;
-      jobs.push(createImageBitmap(blob).then((bitmap) => ({ x, y, bitmap })));
+      jobs.push(createImageBitmap(blob).then((bitmap) => ({ x, y, w, h, bitmap })));
     }
-    for (const { x, y, bitmap } of await Promise.all(jobs)) {
-      ctx.drawImage(bitmap, x, y);
+    frame.tiles = Promise.allSettled(jobs);
+  } catch (err) {
+    console.error("image illisible", err);
+  }
+  return frame;
+}
+
+async function drawFrame(frame) {
+  try {
+    if (closed || !frame.tiles) return;
+    const tiles = await frame.tiles;
+    if (closed) return;
+    if (canvas.width !== frame.width || canvas.height !== frame.height) {
+      canvas.width = frame.width;
+      canvas.height = frame.height;
+      layout();
+    }
+    for (const tile of tiles) {
+      if (tile.status !== "fulfilled") {
+        console.error("tuile illisible", tile.reason);
+        continue;
+      }
+      const { x, y, w, h, bitmap } = tile.value;
+      ctx.drawImage(bitmap, x, y, w, h);
       bitmap.close();
     }
-    stats.frame(buffer.byteLength, performance.now() - started);
-    if (!gotFirstFrame && !closed) {
+    // Une image sans tuile ne sert qu'à mesurer la latence.
+    if (!tiles.length) return;
+    stats.frame(frame.size, performance.now() - frame.arrived);
+    if (!gotFirstFrame) {
       gotFirstFrame = true;
       document.body.classList.add("has-frame");
       hideOverlay();
@@ -77,7 +107,7 @@ async function drawFrame(buffer) {
   } catch (err) {
     console.error("image illisible", err);
   } finally {
-    invoke("viewer_ack", { sid, seq }).catch(() => {});
+    invoke("viewer_ack", { sid, seq: frame.seq }).catch(() => {});
   }
 }
 
@@ -86,36 +116,51 @@ const stats = {
   bytes: 0,
   drawMs: 0,
   host: null, // mesures du poste distant, reçues chaque seconde
-  detailed: false,
+  // Vue affichée : 0, cadence et débit ; 1, temps de chaque étape ; 2, état
+  // de la liaison (si le poste distant le donne).
+  view: 0,
   frame(size, drawMs) {
     this.frames += 1;
     this.bytes += size;
     this.drawMs += drawMs;
   },
 };
+const formatRate = (bytes) => {
+  const mb = bytes / 1e6;
+  return mb >= 1 ? `${mb.toFixed(1).replace(".", ",")} Mo/s` : `${Math.round(bytes / 1e3)} Ko/s`;
+};
+function statsText() {
+  const h = stats.host;
+  if (stats.view === 0) return `${stats.frames} i/s · ${formatRate(stats.bytes)}`;
+  // Par image, en millisecondes : ce que coûte chaque étape. « affichage »
+  // va de l'arrivée d'une image à son dessin.
+  const draw = stats.frames ? Math.round(stats.drawMs / stats.frames) : 0;
+  if (!h) return `${stats.frames} i/s · affichage ${draw} ms · le poste distant ne donne pas ses mesures`;
+  if (stats.view === 1 || h.levels == null) {
+    // Poste distant antérieur à la 0.4.0 : « réseau » est son attente de
+    // l'accusé de réception, moins l'affichage fait ici.
+    const network = h.levels == null ? ` · réseau ${Math.max(0, h.wait - draw)}` : "";
+    return `${stats.frames} i/s · capture ${h.capture} · encodage ${h.encode}${network} · affichage ${draw} ms`;
+  }
+  // La liaison vue du poste distant. « aller-retour » : sa latence, mesurée
+  // sur une petite image. « liaison » : le débit qu'il estime pouvoir
+  // écouler, d'où il déduit la qualité des zones qui bougent.
+  const rtt = h.rtt == null ? "" : `aller-retour ${h.rtt} ms · `;
+  const link = h.rate == null ? "" : `liaison ${formatRate(h.rate * 1e3)} · `;
+  // Allégée : ce qui bouge part en qualité réduite, puis est affiné.
+  const quality = h.level ? `allégée (${h.level}/${h.levels - 1})` : "pleine";
+  return `${rtt}${link}qualité ${quality}`;
+}
 setInterval(() => {
   if (!gotFirstFrame || closed) return;
-  const mb = stats.bytes / 1e6;
-  const rate = mb >= 1 ? `${mb.toFixed(1).replace(".", ",")} Mo/s` : `${Math.round(stats.bytes / 1e3)} Ko/s`;
-  let text = `${stats.frames} i/s · ${rate}`;
-  if (stats.detailed) {
-    // Par image, en millisecondes : ce que coûte chaque étape. « réseau »
-    // est l'attente de l'accusé de réception par le poste distant, donc
-    // l'aller-retour moins l'affichage fait ici.
-    const draw = stats.frames ? Math.round(stats.drawMs / stats.frames) : 0;
-    const h = stats.host;
-    text = h
-      ? `${stats.frames} i/s · capture ${h.capture} · encodage ${h.encode} · réseau ${Math.max(0, h.wait - draw)} · affichage ${draw} ms`
-      : `${stats.frames} i/s · affichage ${draw} ms · le poste distant ne donne pas ses mesures`;
-  }
-  $("stats").textContent = text;
+  $("stats").textContent = statsText();
   stats.frames = 0;
   stats.bytes = 0;
   stats.drawMs = 0;
   stats.host = null;
 }, 1000);
 $("stats").addEventListener("click", () => {
-  stats.detailed = !stats.detailed;
+  stats.view = (stats.view + 1) % 3;
   canvas.focus();
 });
 

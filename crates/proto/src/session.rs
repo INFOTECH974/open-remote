@@ -32,6 +32,12 @@ pub const AUTH_RETRY: &[u8] = b"AUTH_RETRY";
 /// Un poste n'envoie `Clipboard` qu'à un correspondant qui l'annonce, car
 /// les versions antérieures à la 0.3.2 coupent la session sur un message inconnu.
 pub const FEATURE_CLIPBOARD: &str = "clipboard";
+/// Fonction annoncée par le visualiseur dans `Hello` : il dessine chaque
+/// tuile à la taille annoncée dans son en-tête, même si le JPEG est plus
+/// petit. L'hôte peut alors envoyer en demi-résolution ce qui bouge quand la
+/// liaison ne suit pas. Les visualiseurs antérieurs à la 0.4.0 dessinent le
+/// JPEG tel quel.
+pub const FEATURE_SCALED_TILES: &str = "scaled_tiles";
 
 /// Préréglages de qualité d'image.
 pub const QUALITY_FAST: u8 = 1;
@@ -101,7 +107,25 @@ pub enum Control {
     /// où part le temps de chaque image, en millisecondes (moyennes sur la
     /// seconde écoulée). `wait` est l'attente des accusés de réception,
     /// c'est-à-dire le réseau et l'affichage chez le visualiseur.
-    Stats { frames: u16, capture: u16, encode: u16, wait: u16 },
+    ///
+    /// Depuis la 0.4.0, l'hôte y joint ce qu'il sait de la liaison : `rtt`,
+    /// l'aller-retour d'une petite image en millisecondes ; `rate`, le débit
+    /// estimé en Ko/s ; `level`, le niveau de qualité le plus léger utilisé
+    /// pendant la seconde (0 : pleine qualité) parmi `levels` niveaux.
+    Stats {
+        frames: u16,
+        capture: u16,
+        encode: u16,
+        wait: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rtt: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rate: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level: Option<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        levels: Option<u8>,
+    },
     /// Maintien de la connexion, ignoré à la réception.
     Ping,
     /// Fin de session demandée.
@@ -184,7 +208,9 @@ pub fn encode_file_chunk(id: u32, data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Une tuile d'image encodée en JPEG, positionnée dans l'écran.
+/// Une tuile d'image encodée en JPEG, positionnée dans l'écran. `w` et `h`
+/// sont la place qu'elle occupe à l'écran : le JPEG peut être plus petit
+/// (voir [`FEATURE_SCALED_TILES`]), le visualiseur l'agrandit alors.
 pub struct Tile {
     pub x: u16,
     pub y: u16,
@@ -198,6 +224,8 @@ pub struct Tile {
 /// Format : `seq u32 | largeur u16 | hauteur u16 | nb_tuiles u16`, puis pour
 /// chaque tuile `x u16 | y u16 | l u16 | h u16 | taille u32 | jpeg`.
 /// Tout est en big-endian ; l'interface le relit avec un `DataView`.
+/// Une image sans tuile est valide : le visualiseur en accuse réception
+/// aussitôt, ce qui mesure la latence de la liaison.
 pub fn encode_frame(seq: u32, width: u16, height: u16, tiles: &[Tile]) -> Vec<u8> {
     let size: usize = tiles.iter().map(|t| 12 + t.jpeg.len()).sum();
     let mut out = Vec::with_capacity(1 + 10 + size);
@@ -263,6 +291,15 @@ mod tests {
         // Un champ en plus dans un message connu ne gêne pas non plus.
         let start: Control = serde_json::from_slice(br#"{"t":"start","monitor":1,"quality":2}"#).unwrap();
         assert_eq!(start, Control::Start { monitor: 1, quality: 2, stats: false });
+    }
+
+    #[test]
+    fn stats_from_an_older_host_have_no_link_figures() {
+        let json = br#"{"t":"stats","frames":12,"capture":18,"encode":5,"wait":40}"#;
+        let Control::Stats { frames, rtt, rate, level, levels, .. } = serde_json::from_slice(json).unwrap() else {
+            panic!()
+        };
+        assert_eq!((frames, rtt, rate, level, levels), (12, None, None, None, None));
     }
 
     #[test]

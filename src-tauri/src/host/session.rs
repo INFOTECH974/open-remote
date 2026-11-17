@@ -1,7 +1,11 @@
 //! Une session entrante : authentification, envoi des images, réception des
 //! événements clavier/souris et des fichiers.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, bail};
 use distant_proto::{
@@ -9,8 +13,8 @@ use distant_proto::{
     relay::{ClientMsg, RelayMsg},
     secure::{derive_secret, handshake, Opener, Role, Sealer, SecureReader, SecureWriter},
     session::{
-        decode, Control, Incoming, AUTH_FAILED, AUTH_RETRY, FEATURE_CLIPBOARD, STATUS_BUSY, STATUS_LOCKED,
-        STATUS_OK,
+        decode, Control, Incoming, AUTH_FAILED, AUTH_RETRY, FEATURE_CLIPBOARD, FEATURE_SCALED_TILES,
+        STATUS_BUSY, STATUS_LOCKED, STATUS_OK,
     },
     transport::Stream,
 };
@@ -23,7 +27,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    capture::{self, CaptureSettings},
+    capture::{self, CaptureSettings, Signal},
     input::InputWorker,
     permissions::{self, Permissions},
 };
@@ -105,6 +109,7 @@ pub async fn handle_incoming(app: AppHandle, token: String) -> anyhow::Result<()
         bail!("premier message inattendu");
     };
     let peer_clipboard = features.iter().any(|f| f == FEATURE_CLIPBOARD);
+    let scaled_tiles = features.iter().any(|f| f == FEATURE_SCALED_TILES);
     let name = clean_label(&name);
     let os = clean_label(&os);
 
@@ -117,7 +122,7 @@ pub async fn handle_incoming(app: AppHandle, token: String) -> anyhow::Result<()
     emit_incoming(&app, IncomingInfo { active: true, name: name.clone(), os: os.clone() });
     tracing::info!("session entrante depuis « {name} » ({os})");
 
-    let peer = Peer { name: &name, permanent, clipboard: peer_clipboard };
+    let peer = Peer { name: &name, permanent, clipboard: peer_clipboard, scaled_tiles };
     let result = run_session(&app, peer, sock, sealer, opener, cancel).await;
 
     *state.incoming.lock().unwrap() = None;
@@ -147,6 +152,8 @@ struct Peer<'a> {
     permanent: bool,
     /// Il sait partager le presse-papiers.
     clipboard: bool,
+    /// Il sait agrandir une tuile envoyée en demi-résolution.
+    scaled_tiles: bool,
 }
 
 async fn run_session(
@@ -202,9 +209,12 @@ async fn run_session(
     });
 
     let settings = Arc::new(CaptureSettings::new());
+    settings.set_scaled_tiles(peer.scaled_tiles);
     let input = InputWorker::spawn(settings.clone());
-    let (ack_tx, ack_rx) = std::sync::mpsc::channel::<u32>();
-    let mut ack_rx = Some(ack_rx);
+    // Ce que la capture doit savoir du visualiseur ; elle prend le récepteur
+    // au démarrage (`Start`).
+    let (signal_tx, signal_rx) = std::sync::mpsc::channel::<Signal>();
+    let mut signal_rx = Some(signal_rx);
 
     // Maintien de connexion : un message toutes les 10 s, même écran figé.
     {
@@ -238,19 +248,26 @@ async fn run_session(
             };
             match control {
                 Control::Start { monitor, quality, stats } => {
-                    if let Some(acks) = ack_rx.take() {
+                    if let Some(signals) = signal_rx.take() {
                         settings.set_monitor(monitor);
                         settings.set_quality(quality);
                         settings.set_stats(stats);
-                        capture::spawn(settings.clone(), out_tx.clone(), acks, cancel.clone());
+                        capture::spawn(settings.clone(), out_tx.clone(), signals, cancel.clone());
                     }
                 }
                 Control::SetMonitor { index } => settings.set_monitor(index),
                 Control::SetQuality { quality } => settings.set_quality(quality),
                 Control::FrameAck { seq } => {
-                    let _ = ack_tx.send(seq);
+                    // Daté ici : la capture peut être occupée à encoder.
+                    let _ = signal_tx.send(Signal::Ack { seq, at: Instant::now() });
                 }
-                Control::Input { event } => input.send(event),
+                Control::Input { event } => {
+                    input.send(event);
+                    // L'écran va changer : la capture regarde sans attendre.
+                    if signal_rx.is_none() {
+                        let _ = signal_tx.send(Signal::Input);
+                    }
+                }
                 Control::FileStart { id, name, size } => {
                     if let Err(e) = received.start(id, &name, size).await {
                         out_tx.send(Control::FileError { id, message: e.to_string() }.encode()).await?;

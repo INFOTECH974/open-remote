@@ -23,8 +23,8 @@ use distant_proto::{
     relay::{ClientMsg, RelayMsg},
     secure::{derive_secret, handshake, normalize_password, Role, SecureReader, SecureWriter},
     session::{
-        decode, Control, Incoming, MonitorInfo, AUTH_FAILED, AUTH_RETRY, FEATURE_CLIPBOARD, STATUS_BUSY,
-        STATUS_LOCKED, STATUS_OK, TAG_FRAME,
+        decode, Control, Incoming, MonitorInfo, AUTH_FAILED, AUTH_RETRY, FEATURE_CLIPBOARD,
+        FEATURE_SCALED_TILES, STATUS_BUSY, STATUS_LOCKED, STATUS_OK, TAG_FRAME,
     },
     transport::Stream,
     PROTOCOL_VERSION,
@@ -170,8 +170,19 @@ pub enum ViewerEvent {
     /// Le poste distant a enregistré le fichier sous le nom `name`.
     FileDone { id: u32, name: String },
     FileError { id: u32, message: String },
-    /// Mesures du poste distant, une fois par seconde (millisecondes par image).
-    HostStats { frames: u16, capture: u16, encode: u16, wait: u16 },
+    /// Mesures du poste distant, une fois par seconde (millisecondes par
+    /// image). Les quatre dernières décrivent la liaison vue de l'hôte (voir
+    /// `Control::Stats`) ; un hôte antérieur à la 0.4.0 ne les donne pas.
+    HostStats {
+        frames: u16,
+        capture: u16,
+        encode: u16,
+        wait: u16,
+        rtt: Option<u16>,
+        rate: Option<u32>,
+        level: Option<u8>,
+        levels: Option<u8>,
+    },
 }
 
 /// Comment s'authentifier auprès du poste distant.
@@ -335,7 +346,7 @@ async fn open_session(config: &Config, id: &str, secret: &[u8; 32]) -> anyhow::R
         name: crate::hostname(),
         os: std::env::consts::OS.into(),
         version: PROTOCOL_VERSION,
-        features: vec![FEATURE_CLIPBOARD.into()],
+        features: vec![FEATURE_CLIPBOARD.into(), FEATURE_SCALED_TILES.into()],
     }
     .encode();
 
@@ -503,8 +514,8 @@ pub fn attach(
                         }
                     }
                 }
-                Ok(Incoming::Control(Control::Stats { frames, capture, encode, wait })) => {
-                    events.emit(ViewerEvent::HostStats { frames, capture, encode, wait });
+                Ok(Incoming::Control(Control::Stats { frames, capture, encode, wait, rtt, rate, level, levels })) => {
+                    events.emit(ViewerEvent::HostStats { frames, capture, encode, wait, rtt, rate, level, levels });
                 }
                 Ok(Incoming::Control(Control::FileDone { id, name })) => {
                     events.emit(ViewerEvent::FileDone { id, name });

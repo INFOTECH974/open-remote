@@ -35,7 +35,7 @@ Windows, macOS et Linux (X11).
 2. Le visualiseur demande cet ID ; le relais prévient l'hôte, qui ouvre une connexion dédiée.
 3. Le relais relie les deux connexions et recopie les octets, sans les comprendre.
 4. Échange **SPAKE2** à partir du mot de passe (dérivé par **PBKDF2**, salé par l'ID) → clés **ChaCha20-Poly1305**, une par sens.
-5. L'hôte envoie l'écran en **tuiles JPEG** de 128 px : seules les zones modifiées partent. Le visualiseur accuse réception de chaque image, l'hôte n'en a jamais plus de deux d'avance : la cadence s'adapte au débit et la latence ne s'accumule pas.
+5. L'hôte envoie l'écran en **tuiles JPEG** de 128 px : seules les zones modifiées partent. Le visualiseur accuse réception de chaque image : l'hôte en déduit la latence et le débit de la liaison, donc combien d'images peuvent être en route et combien chacune peut peser. Quand la liaison ne suit pas, ce qui bouge part en qualité réduite (jusqu'au quart de la résolution) pour rester fluide, puis est affiné dès que l'écran se calme : la latence ne s'accumule pas.
 6. Les fichiers envoyés par le visualiseur empruntent le même canal chiffré, par morceaux de 64 Ko qui passent après le clavier et la souris.
 
 ## Prérequis
