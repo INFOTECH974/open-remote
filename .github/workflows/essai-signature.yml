@@ -122,6 +122,10 @@ jobs:
             echo "::error::Le témoin ad hoc aurait dû donner deux identités différentes."
             exit 1
           fi
+          # Sans les secrets du dépôt, release.yml construit une version ad
+          # hoc : sa vérification doit la laisser passer, en le disant.
+          env -u APPLE_SIGNING_IDENTITY GITHUB_STEP_SUMMARY= \
+            bash "$GITHUB_WORKSPACE/.github/scripts/verifier-signature-macos.sh" adhoc-v1/Distant.app
 
           # Comme sur le Mac d'un client : le certificat n'y est dans aucun
           # trousseau, et macOS vérifie la nouvelle version contre l'identité
