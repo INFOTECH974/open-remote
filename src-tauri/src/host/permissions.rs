@@ -18,7 +18,13 @@
 //! est celle de l'ancienne version et ne vaut plus : il faut la retirer
 //! ([`reset`]) puis l'accorder de nouveau.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde::Serialize;
+
+/// Demandes déjà faites à macOS depuis le lancement, ou depuis [`reset`].
+static ASKED_SCREEN: AtomicBool = AtomicBool::new(false);
+static ASKED_INPUT: AtomicBool = AtomicBool::new(false);
 
 /// `true` = accordée. Toujours vrai hors de macOS.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,22 +70,33 @@ impl Permissions {
 /// de l'écran (la première fois seulement) et inscrit Distant dans la liste
 /// des Réglages Système.
 pub fn request_screen() {
+    ASKED_SCREEN.store(true, Ordering::Relaxed);
     sys::request_screen();
 }
 
-/// Ouvre les Réglages Système sur l'autorisation à accorder (`screen` ou
-/// `input`), après avoir fait inscrire Distant dans la liste par macOS.
-pub fn open_settings(kind: &str) {
-    match kind {
-        "screen" => {
-            sys::request_screen();
-            sys::open_settings("Privacy_ScreenCapture");
-        }
-        _ => {
-            sys::request_input();
-            sys::open_settings("Privacy_Accessibility");
-        }
+/// Demande à macOS l'autorisation `kind` (`screen` ou `input`), une seule
+/// fois par lancement : c'est ce qui inscrit Distant dans la liste des
+/// Réglages Système. macOS affiche alors sa propre fenêtre, qui propose
+/// d'ouvrir les réglages. Renvoie vrai si la demande vient d'être faite ;
+/// faux si elle l'avait déjà été, auquel cas rien ne s'affiche.
+pub fn ask(kind: &str) -> bool {
+    let (asked, request): (&AtomicBool, fn()) = match kind {
+        "screen" => (&ASKED_SCREEN, sys::request_screen),
+        _ => (&ASKED_INPUT, sys::request_input),
+    };
+    if asked.swap(true, Ordering::Relaxed) {
+        return false;
     }
+    request();
+    true
+}
+
+/// Ouvre les Réglages Système sur l'autorisation à accorder (`screen` ou `input`).
+pub fn open_settings(kind: &str) {
+    sys::open_settings(match kind {
+        "screen" => "Privacy_ScreenCapture",
+        _ => "Privacy_Accessibility",
+    });
 }
 
 /// Vrai si les autorisations données à cette version vaudront encore pour la
@@ -102,7 +119,11 @@ pub fn survive_updates() -> bool {
 /// accordées sans valoir pour la version qui tourne. Tout est ensuite à
 /// accorder de nouveau.
 pub fn reset(identifier: &str) -> Result<(), String> {
-    sys::reset(identifier)
+    sys::reset(identifier)?;
+    // Distant n'est plus dans les listes de macOS : il faudra l'y réinscrire.
+    ASKED_SCREEN.store(false, Ordering::Relaxed);
+    ASKED_INPUT.store(false, Ordering::Relaxed);
+    Ok(())
 }
 
 /// Vrai si `description`, la sortie de `codesign -dv --verbose=2`, est celle
@@ -300,5 +321,20 @@ Internal requirements count=0 size=12
         assert!(!signed_by_certificate(&SELF_SIGNED.replace("Authority=Distant Essai\n", "")));
         // Commande en échec : aucune description.
         assert!(!signed_by_certificate(""));
+    }
+
+    /// Hors de macOS, où les demandes et la réinitialisation ne font rien.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn each_permission_is_asked_once_until_reset() {
+        assert!(ask("input"), "première demande");
+        assert!(!ask("input"), "déjà demandée : rien ne s'affichera");
+        // L'autre autorisation a sa propre demande, même faite par la session.
+        request_screen();
+        assert!(!ask("screen"));
+        // Après une réinitialisation, tout est à redemander.
+        reset("app.distant.desktop").unwrap();
+        assert!(ask("screen"));
+        assert!(ask("input"));
     }
 }

@@ -5,7 +5,7 @@ use distant_proto::{
     secure::{derive_secret, normalize_password},
     session::{Control, InputEvent, QUALITY_FAST, QUALITY_HIGH},
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use serde::Serialize;
 use tauri::{ipc::Channel, AppHandle, State, WebviewWindow};
@@ -164,9 +164,28 @@ pub fn get_permissions() -> Permissions {
     Permissions::check()
 }
 
-/// Ouvre les Réglages Système sur l'autorisation manquante (`screen` ou `input`).
+/// Temps laissé à macOS pour afficher sa propre demande d'autorisation.
+const SYSTEM_PROMPT_DELAY: Duration = Duration::from_millis(900);
+
+/// Mène aux Réglages Système pour l'autorisation manquante (`screen` ou
+/// `input`), par une seule fenêtre à la fois.
+///
+/// La première fois, Distant doit se faire inscrire dans la liste par macOS,
+/// qui affiche alors sa propre demande, avec son bouton « Ouvrir Réglages
+/// Système… » : ouvrir les réglages en plus mettrait deux fenêtres à
+/// l'écran, et la demande resterait là une fois l'autorisation accordée.
+/// Si rien n'est venu prendre la place de notre fenêtre (macOS ne redemande
+/// pas ce qu'il a déjà demandé), ou aux clics suivants, on ouvre les
+/// réglages nous-mêmes.
 #[tauri::command]
-pub fn open_permission_settings(kind: String) {
+pub async fn open_permission_settings(window: WebviewWindow, kind: String) {
+    if permissions::ask(&kind) {
+        tokio::time::sleep(SYSTEM_PROMPT_DELAY).await;
+        // Dans le doute, on ouvre : au pire, deux fenêtres comme avant.
+        if !window.is_focused().unwrap_or(true) {
+            return;
+        }
+    }
     permissions::open_settings(&kind);
 }
 
