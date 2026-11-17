@@ -1,0 +1,3 @@
+# Les scripts shell tournent aussi sous macOS et Linux (CI) : des fins de
+# ligne Windows les y rendraient illisibles, et Git Bash les refuse aussi.
+*.sh text eol=lf
