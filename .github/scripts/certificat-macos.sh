@@ -61,7 +61,7 @@ export P12_MOT_DE_PASSE
 openssl pkcs12 -export -inkey "$travail/cle.pem" -in "$dossier/distant-macos.crt" -name "$nom" \
   -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
   -passout env:P12_MOT_DE_PASSE -out "$p12"
-printf '%s\n' "$P12_MOT_DE_PASSE" > "$dossier/mot-de-passe.txt"
+printf '%s' "$P12_MOT_DE_PASSE" > "$dossier/mot-de-passe.txt"
 openssl base64 -A -in "$p12" -out "$dossier/secret-MACOS_CERTIFICATE.txt"
 
 empreinte="$(openssl x509 -in "$dossier/distant-macos.crt" -noout -fingerprint -sha1 | sed 's/.*=//; s/://g')"

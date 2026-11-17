@@ -30,14 +30,15 @@ p12="$temp/distant-macos.p12"
 # Ce mot de passe ne protège que le trousseau, qui disparaît avec la machine.
 cle_trousseau="$(openssl rand -hex 16)"
 
-# Un secret collé avec des retours à la ligne reste lisible.
+# Des secrets collés avec un retour à la ligne restent lisibles.
 printf '%s' "$MACOS_CERTIFICATE" | tr -d '[:space:]' | openssl base64 -d -A -out "$p12"
+mot_de_passe="$(printf '%s' "$MACOS_CERTIFICATE_PASSWORD" | tr -d '[:space:]')"
 
 security create-keychain -p "$cle_trousseau" "$trousseau"
 # Verrouillage automatique repoussé à 2 h : bien plus qu'un build.
 security set-keychain-settings -lut 7200 "$trousseau"
 security unlock-keychain -p "$cle_trousseau" "$trousseau"
-security import "$p12" -f pkcs12 -k "$trousseau" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+security import "$p12" -f pkcs12 -k "$trousseau" -P "$mot_de_passe" -T /usr/bin/codesign
 rm -f "$p12"
 # Sans cela, `codesign` attendrait une confirmation à l'écran pour lire la clé.
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$cle_trousseau" "$trousseau" >/dev/null

@@ -176,7 +176,7 @@ Une copie installée regarde la dernière version publiée sur GitHub (30 s apr�
 
 - **Installation automatique** (réglages → *Mises à jour*, activée par défaut sous Windows et Linux) : la nouvelle version est téléchargée en arrière-plan, puis installée dès que le poste n'est plus en session, dans un sens comme dans l'autre. Distant redémarre seul et revient comme il était : réduit dans la zone de notification si sa fenêtre était fermée. Un poste sans surveillance reçoit donc un correctif sans personne devant, et redevient joignable quelques secondes plus tard.
 - **À la main** : dès qu'une version est disponible, la fenêtre principale l'annonce avec **Installer et redémarrer**. *Réglages → Rechercher une mise à jour* force une recherche ; si elle trouve une version, les réglages se ferment et une fenêtre propose de l'installer.
-- **macOS** : tant que l'application n'est signée que « ad hoc » (sans certificat), macOS la reconnaît à son empreinte, qui change à chaque version, et redemande l'*Enregistrement de l'écran* et l'*Accessibilité* après chaque mise à jour. Un Mac mis à jour à distance ne peut alors plus être contrôlé tant que quelqu'un ne les a pas redonnées sur place. Distant le détecte (`codesign -dv`) : sur un tel Mac il n'installe jamais une mise à jour de lui-même, et prévient avant toute installation demandée à la main.
+- **macOS** : les versions publiées sont signées avec un certificat fixe (voir [Signature macOS](#signature-macos)) ; macOS y reconnaît la même application d'une version à l'autre et garde l'*Enregistrement de l'écran* et l'*Accessibilité* après une mise à jour. Une version signée « ad hoc » (sans certificat : build local, ou version antérieure au certificat) est au contraire reconnue à son empreinte, qui change à chaque build, et macOS redemande ces autorisations après la mise à jour : un Mac mis à jour à distance ne peut alors plus être contrôlé tant que quelqu'un ne les a pas redonnées sur place. Distant sait dans quel cas il est (`codesign -dv --verbose=2`) : signé ad hoc, il n'installe jamais une mise à jour de lui-même, et prévient avant toute installation demandée à la main.
 - Une mise à jour ne s'applique qu'aux copies installées par un installateur (`.exe`, `.msi`, `.dmg`, `.AppImage`), pas à un binaire lancé depuis `target/`.
 
 ## Presse-papiers partagé
@@ -203,7 +203,7 @@ Le build signe aussi les installateurs pour la mise à jour : il lui faut la cl�
 TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/distant.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npm run build
 ```
 
-Ces installateurs ne sont pas signés par un certificat. Sous macOS, l'application téléchargée est donc bloquée au premier lancement : après l'avoir copiée dans *Applications*, levez la quarantaine avec `xattr -dr com.apple.quarantine /Applications/Distant.app`. Sous Windows, SmartScreen demande une confirmation (« Informations complémentaires » → « Exécuter quand même »).
+Ces installateurs ne sont signés par aucun certificat reconnu d'Apple ou de Microsoft (un build local est signé « ad hoc » sous macOS ; les versions publiées le sont avec un certificat auto-signé, voir [Signature macOS](#signature-macos)). Sous macOS, l'application téléchargée est donc bloquée au premier lancement : après l'avoir copiée dans *Applications*, levez la quarantaine avec `xattr -dr com.apple.quarantine /Applications/Distant.app`. Sous Windows, SmartScreen demande une confirmation (« Informations complémentaires » → « Exécuter quand même »).
 
 ## Publier une version
 
@@ -221,6 +221,52 @@ La clé de signature (minisign, sans mot de passe) est dans `~/.tauri/distant.ke
 
 Pour essayer la recherche de mise à jour sans rien publier, un build de développement accepte un autre `latest.json` (`DISTANT_UPDATE_ENDPOINT=http://127.0.0.1:8000/latest.json`) et un essai à blanc (`DISTANT_UPDATE_DRY_RUN=1`) qui traite la version publiée comme nouvelle, la télécharge et vérifie sa signature, sans l'installer.
 
+### Signature macOS
+
+macOS attache les autorisations *Enregistrement de l'écran* et *Accessibilité* à l'identité de l'application. Signée « ad hoc », cette identité est l'empreinte du build et change à chaque version. Signée avec un certificat, c'est `app.distant.desktop` plus l'empreinte du certificat : tant que **le même certificat** signe toutes les versions, un Mac garde ses autorisations d'une mise à jour à l'autre. Un certificat Apple n'est pas nécessaire pour cela : un certificat auto-signé suffit, à créer une seule fois.
+
+**1. Créer le certificat** (une fois pour toutes, dans Git Bash, depuis le dépôt) :
+
+```bash
+bash .github/scripts/certificat-macos.sh
+```
+
+Le script écrit dans `~/.tauri/distant-macos/` et refuse de remplacer un certificat qui s'y trouve déjà :
+
+| Fichier | Contenu |
+|---|---|
+| `distant-macos.p12` | le certificat et sa clé privée |
+| `mot-de-passe.txt` | le mot de passe du `.p12`, tiré au hasard |
+| `secret-MACOS_CERTIFICATE.txt` | le `.p12` en base64, sur une seule ligne |
+| `distant-macos.crt` | le certificat seul (public), valable 20 ans |
+
+**2. Sauvegarder ce dossier**, au même endroit que `~/.tauri/distant.key`. Le perdre oblige à créer un autre certificat : l'identité change, et tous les Mac redemandent leurs autorisations une fois de plus.
+
+**3. Créer deux secrets dans GitHub**, avec le compte propriétaire du dépôt : *Settings → Secrets and variables → Actions → New repository secret*.
+
+| Nom du secret | Valeur |
+|---|---|
+| `MACOS_CERTIFICATE` | tout le contenu de `secret-MACOS_CERTIFICATE.txt` |
+| `MACOS_CERTIFICATE_PASSWORD` | le contenu de `mot-de-passe.txt` |
+
+Ou, en ligne de commande, connecté à `gh` avec ce même compte :
+
+```bash
+gh secret set MACOS_CERTIFICATE -R INFOTECH974/open-remote < ~/.tauri/distant-macos/secret-MACOS_CERTIFICATE.txt
+```
+
+```bash
+gh secret set MACOS_CERTIFICATE_PASSWORD -R INFOTECH974/open-remote < ~/.tauri/distant-macos/mot-de-passe.txt
+```
+
+À partir de là, `release.yml` importe le certificat dans un trousseau temporaire, signe avec lui les deux versions macOS, puis vérifie la signature : le résumé de l'exécution affiche l'identité de chaque application, et le job échoue si elle n'est pas celle du certificat. Sans ces secrets, le build passe quand même, signé ad hoc, avec un avertissement.
+
+**La première version signée avec ce certificat** change l'identité une dernière fois (d'une empreinte de build à celle du certificat). Sur chaque Mac, il faut donc encore une fois être sur place : installer la mise à jour à la main (une copie signée ad hoc ne l'installe pas d'elle-même), puis **Réinitialiser les autorisations** et accorder de nouveau l'*Enregistrement de l'écran* et l'*Accessibilité*. Les versions suivantes gardent ces autorisations, et l'installation automatique devient possible sur ce Mac.
+
+Ce que le certificat ne change pas : il n'est pas reconnu d'Apple, l'application téléchargée reste donc bloquée à son premier lancement (voir [Construire les installateurs](#construire-les-installateurs)).
+
+Le workflow manuel **Essai de signature macOS** (`essai-signature.yml`) refait la preuve sans toucher aux secrets : il crée un certificat jetable avec le même script, construit Distant deux fois sous deux numéros de version, et échoue si macOS ne leur reconnaît pas la même identité.
+
 ## Sécurité
 
 - Le mot de passe ne circule jamais, même chiffré. SPAKE2 empêche un relais malveillant de le deviner hors ligne : chaque essai demande une vraie tentative de connexion.
@@ -233,7 +279,7 @@ Fichier de réglages : `%APPDATA%\app.distant.desktop\config.json` (Windows), `~
 
 ## Autorisations et limites connues
 
-- **macOS** : Distant doit être autorisé dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). Tant qu'il manque une autorisation, la fenêtre principale ouvre un écran *Autorisations de macOS* qui dit laquelle, ouvre le bon réglage et propose de relancer Distant (macOS ne tient compte de l'enregistrement de l'écran qu'au lancement). Le poste qui contrôle est prévenu lui aussi : sans cela il ne verrait qu'un écran vide, sans explication. L'application n'étant pas signée par un certificat Apple, ces autorisations sont à redonner après chaque nouvelle version : les Réglages Système montrent alors Distant toujours coché, mais c'est l'autorisation de l'ancienne version, qui ne vaut plus. Le lien **Réinitialiser les autorisations** de cet écran l'efface (comme `tccutil reset ScreenCapture app.distant.desktop` et `tccutil reset Accessibility app.distant.desktop`), il ne reste qu'à les accorder de nouveau.
+- **macOS** : Distant doit être autorisé dans *Réglages Système → Confidentialité et sécurité* pour l'**Enregistrement de l'écran** (capture) et l'**Accessibilité** (clavier/souris). Tant qu'il manque une autorisation, la fenêtre principale ouvre un écran *Autorisations de macOS* qui dit laquelle, ouvre le bon réglage et propose de relancer Distant (macOS ne tient compte de l'enregistrement de l'écran qu'au lancement). Le poste qui contrôle est prévenu lui aussi : sans cela il ne verrait qu'un écran vide, sans explication. Après une mise à jour depuis ou vers une version signée « ad hoc » (voir [Signature macOS](#signature-macos)), ces autorisations sont à redonner : les Réglages Système montrent alors Distant toujours coché, mais c'est l'autorisation de l'ancienne version, qui ne vaut plus. Le lien **Réinitialiser les autorisations** de cet écran l'efface (comme `tccutil reset ScreenCapture app.distant.desktop` et `tccutil reset Accessibility app.distant.desktop`), il ne reste qu'à les accorder de nouveau.
 - **Windows** : l'écran de verrouillage, l'invite UAC et `Ctrl+Alt+Suppr` ne sont pas accessibles (il faudrait un service Windows). Une fenêtre lancée en administrateur ne peut pas être contrôlée si Distant ne l'est pas lui-même.
 - **Linux** : X11 uniquement pour l'injection clavier/souris. Sous Wayland, la capture passe par le portail du bureau quand il est disponible.
 - Pas encore de son. Le presse-papiers ne partage que du texte. Les fichiers ne vont que du poste qui contrôle vers le poste contrôlé, pas dans l'autre sens.

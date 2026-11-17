@@ -12,6 +12,12 @@ name: Release
 # releases publiées : la mise à jour n'atteint les postes qu'une fois le
 # brouillon publié.
 #
+# Les versions macOS sont en plus signées avec le certificat auto-signé du
+# dépôt (secrets `MACOS_CERTIFICATE` et `MACOS_CERTIFICATE_PASSWORD`, voir
+# « Publier une version » dans le README) : macOS reconnaît l'application à
+# ce certificat et garde ses autorisations d'une version à l'autre. Sans ces
+# secrets, la signature reste « ad hoc » et le build passe quand même.
+#
 # Chaque action est épinglée à un commit plutôt qu'à une étiquette : ce
 # workflow détient la clé de signature, et une étiquette peut être déplacée
 # vers un autre code. Le commentaire après chaque commit donne sa version.
@@ -108,6 +114,15 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # Pose `APPLE_SIGNING_IDENTITY` pour le build qui suit ; sans les
+      # secrets, ne fait qu'avertir.
+      - name: Certificat de signature macOS
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: bash .github/scripts/trousseau-macos.sh
+
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,6 +135,15 @@ jobs:
           # côte et écraseraient les entrées les uns des autres.
           includeUpdaterJson: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+      # Échoue si l'application n'est pas signée avec le certificat importé :
+      # `latest.json` n'est alors pas écrit, et la version n'atteint aucun
+      # poste. L'identité obtenue est affichée dans le résumé de l'exécution.
+      - name: Vérifier la signature macOS
+        if: runner.os == 'macOS'
+        env:
+          CIBLE: ${{ matrix.target }}
+        run: bash .github/scripts/verifier-signature-macos.sh "target/$CIBLE/release/bundle/macos/Distant.app"
 
   relay:
     name: Relais (Linux)

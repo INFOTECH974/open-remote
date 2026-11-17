@@ -9,8 +9,11 @@
 //! macOS ne relit l'autorisation d'enregistrement de l'écran qu'au lancement
 //! de l'application : après l'avoir accordée, il faut relancer Distant.
 //!
-//! Une application sans certificat Apple est reconnue par macOS à son
-//! empreinte exacte, qui change à chaque version. Après une mise à jour, les
+//! Une application signée « ad hoc », sans certificat, est reconnue par macOS
+//! à son empreinte exacte, qui change à chaque version ; signée avec un
+//! certificat, même auto-signé, elle l'est à ce certificat et garde ses
+//! autorisations ([`survive_updates`]). Après une mise à jour qui change
+//! cette identité, les
 //! Réglages Système montrent toujours Distant coché, mais cette autorisation
 //! est celle de l'ancienne version et ne vaut plus : il faut la retirer
 //! ([`reset`]) puis l'accorder de nouveau.
@@ -102,6 +105,17 @@ pub fn reset(identifier: &str) -> Result<(), String> {
     sys::reset(identifier)
 }
 
+/// Vrai si `description`, la sortie de `codesign -dv --verbose=2`, est celle
+/// d'une signature faite avec un certificat, même auto-signé : macOS
+/// reconnaît alors l'application à ce certificat, quelle que soit la version.
+/// Une signature « ad hoc » s'annonce par « Signature=adhoc » et ne nomme
+/// aucune autorité.
+#[cfg(any(target_os = "macos", test))]
+fn signed_by_certificate(description: &str) -> bool {
+    description.lines().any(|line| line.starts_with("Authority="))
+        && !description.lines().any(|line| line.starts_with("Signature=adhoc"))
+}
+
 #[cfg(target_os = "macos")]
 mod sys {
     use std::{ffi::c_void, process::Command, ptr};
@@ -185,15 +199,17 @@ mod sys {
         }
     }
 
-    /// `codesign -dv` décrit la signature de l'application qui tourne ; une
-    /// signature sans certificat s'y annonce par « Signature=adhoc ». Dans le
-    /// doute (commande absente, sortie inattendue), on la tient pour instable.
+    /// `codesign -dv --verbose=2` décrit la signature de l'application qui
+    /// tourne. Le niveau 2 est nécessaire : le certificat qui a signé
+    /// (« Authority= ») n'est pas nommé en dessous. Dans le doute (commande
+    /// absente, sortie inattendue), on tient la signature pour instable.
     pub fn stable_signature() -> bool {
         let Ok(exe) = std::env::current_exe() else { return false };
-        let Ok(output) = Command::new("codesign").arg("-dv").arg(exe).output() else { return false };
+        let Ok(output) = Command::new("codesign").args(["-dv", "--verbose=2"]).arg(exe).output() else {
+            return false;
+        };
         // `codesign` écrit sa description sur la sortie d'erreur.
-        let description = String::from_utf8_lossy(&output.stderr);
-        output.status.success() && description.contains("Authority=") && !description.contains("Signature=adhoc")
+        output.status.success() && super::signed_by_certificate(&String::from_utf8_lossy(&output.stderr))
     }
 
     pub fn reset(identifier: &str) -> Result<(), String> {
@@ -244,5 +260,45 @@ mod tests {
         assert!(Permissions { screen: true, input: true }.warnings().is_empty());
         assert_eq!(Permissions { screen: false, input: true }.warnings(), [WARNING_SCREEN]);
         assert_eq!(Permissions { screen: false, input: false }.warnings(), [WARNING_SCREEN, WARNING_INPUT]);
+    }
+
+    /// Sorties de `codesign -dv --verbose=2` relevées sur un Mac par l'essai
+    /// de signature (`.github/workflows/essai-signature.yml`) : un programme
+    /// signé avec un certificat auto-signé, puis le même signé « ad hoc ».
+    const SELF_SIGNED: &str = "\
+Executable=/Users/runner/work/_temp/p1
+Identifier=app.distant.essai
+Format=Mach-O thin (arm64)
+CodeDirectory v=20400 size=234 flags=0x0(none) hashes=2+2 location=embedded
+Signature size=1678
+Authority=Distant Essai
+Signed Time=Nov 17, 2026 at 8:50:03 AM
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements count=1 size=96
+";
+    const AD_HOC: &str = "\
+Executable=/Users/runner/work/_temp/adhoc
+Identifier=adhoc-55554944d6aa74a68b9f3892bba18e076c1d83d4
+Format=Mach-O thin (arm64)
+CodeDirectory v=20400 size=263 flags=0x2(adhoc) hashes=2+2 location=embedded
+Signature=adhoc
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements count=0 size=12
+";
+
+    #[test]
+    fn only_a_certificate_makes_the_signature_stable() {
+        // Un certificat auto-signé suffit : une autorité, sans équipe Apple.
+        assert!(signed_by_certificate(SELF_SIGNED));
+        assert!(!signed_by_certificate(AD_HOC));
+        // `codesign -dv` sans `--verbose=2` donne la même description moins
+        // la ligne « Authority= » : elle ne permet pas de conclure.
+        assert!(!signed_by_certificate(&SELF_SIGNED.replace("Authority=Distant Essai\n", "")));
+        // Commande en échec : aucune description.
+        assert!(!signed_by_certificate(""));
     }
 }
